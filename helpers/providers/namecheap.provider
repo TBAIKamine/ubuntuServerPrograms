@@ -1,0 +1,197 @@
+#!/bin/bash
+# Namecheap DNS Provider Plugin
+# This provider handles all Namecheap-specific operations for domain management
+#
+# Expected environment variables from orchestrator:
+#   PROVIDER_USERNAME - The Namecheap username
+#   PROVIDER_API_KEY  - The Namecheap API key
+
+PROVIDER_NAME="namecheap.com"
+PROVIDER_API_BASE="https://api.namecheap.com/xml.response"
+
+# Helper function to build API URL with authentication
+build_api_url() {
+    local command="$1"
+    local wan_ip="$2"
+    local extra_params="${3:-}"
+    
+    echo "${PROVIDER_API_BASE}?ApiUser=${PROVIDER_USERNAME}&ApiKey=${PROVIDER_API_KEY}&UserName=${PROVIDER_USERNAME}&Command=${command}&ClientIp=${wan_ip}${extra_params}"
+}
+
+# Helper function to check API response for errors
+check_api_error() {
+    local response="$1"
+    local operation="${2:-API operation}"
+    
+    if echo "$response" | grep -q 'Status="ERROR"'; then
+        echo "Error: $operation failed:" 2>/dev/null
+        echo "$response" | grep -o '<Error[^>]*>[^<]*</Error>' || echo "Unknown API error"
+        exit 1
+    fi
+}
+
+# Provider-specific function to get domain list
+# Returns: DOMAIN_LIST variable containing newline-separated domain names
+provider_get_domain_list() {
+    local wan_ip="$1"
+    
+    # Call Namecheap API to get domain list
+    local api_url=$(build_api_url "namecheap.domains.getList" "$wan_ip")
+    API_RESPONSE=$(curl -s "$api_url")
+    
+    if [ $? -ne 0 ]; then
+        echo "Error: Failed to call Namecheap API" 2>/dev/null
+        exit 1
+    fi
+    
+    check_api_error "$API_RESPONSE" "Get domain list"
+    
+    # Extract domain names from XML response
+    DOMAIN_LIST=$(echo "$API_RESPONSE" | grep -o 'Name="[^"]*"' | sed 's/Name="//g' | sed 's/"//g')
+    
+    if [ -z "$DOMAIN_LIST" ]; then
+        echo "Error: No domains found in Namecheap account" 2>/dev/null
+        exit 1
+    fi
+}
+
+# Provider-specific function to get existing DNS records for a domain
+# Returns: PARSED_RECORDS variable containing records in format "name|type|address|ttl\n..."
+provider_get_dns_records() {
+    local domain="$1"
+    local wan_ip="$2"
+    
+    # Parse domain into SLD and TLD
+    SLD=$(echo "$domain" | cut -d'.' -f1)
+    TLD=$(echo "$domain" | cut -d'.' -f2-)
+    
+    # Get existing DNS records
+    local api_url=$(build_api_url "namecheap.domains.dns.getHosts" "$wan_ip" "&SLD=${SLD}&TLD=${TLD}")
+    EXISTING_RECORDS=$(curl -s "$api_url")
+    
+    if [ $? -ne 0 ]; then
+        echo "Error: Failed to retrieve existing DNS records" 2>/dev/null
+        exit 1
+    fi
+    
+    check_api_error "$EXISTING_RECORDS" "Get DNS records"
+    
+    # Parse existing records into structured format
+    PARSED_RECORDS=""
+    
+    # Extract existing records from XML and convert to structured format
+    while IFS= read -r line; do
+        if echo "$line" | grep -q '<Host '; then
+            HOST_NAME=$(echo "$line" | grep -o 'Name="[^"]*"' | sed 's/Name="//g' | sed 's/"//g')
+            HOST_TYPE=$(echo "$line" | grep -o 'Type="[^"]*"' | sed 's/Type="//g' | sed 's/"//g')
+            HOST_ADDRESS=$(echo "$line" | grep -o 'Address="[^"]*"' | sed 's/Address="//g' | sed 's/"//g')
+            HOST_TTL=$(echo "$line" | grep -o 'TTL="[^"]*"' | sed 's/TTL="//g' | sed 's/"//g')
+            
+            if [ -n "$HOST_NAME" ] && [ -n "$HOST_TYPE" ] && [ -n "$HOST_ADDRESS" ]; then
+                PARSED_RECORDS="${PARSED_RECORDS}${HOST_NAME}|${HOST_TYPE}|${HOST_ADDRESS}|${HOST_TTL:-1800}\n"
+            fi
+        fi
+    done <<< "$EXISTING_RECORDS"
+}
+
+# Provider-specific function to set DNS records (used by both certify and cleanup)
+# Parameters: domain, wan_ip, parsed_records, include_acme_challenge, acme_value, [exclude_acme_token]
+provider_set_dns_records() {
+    local domain="$1"
+    local wan_ip="$2"
+    local parsed_records="$3"
+    local include_acme_challenge="$4"
+    local acme_value="$5"
+    local exclude_acme_token="${6:-}"  # Optional: token to exclude during cleanup
+    
+    # Parse domain into SLD and TLD
+    local sld=$(echo "$domain" | cut -d'.' -f1)
+    local tld=$(echo "$domain" | cut -d'.' -f2-)
+    
+    # Build base parameters
+    local host_params="&SLD=${sld}&TLD=${tld}"
+    local record_count=1
+    
+    # Add existing records to parameters
+    while IFS='|' read -r host_name host_type host_address host_ttl; do
+        # Skip ACME challenge record if we're excluding it (cleanup mode)
+        if [ -n "$exclude_acme_token" ] && [ "$host_name" = "_acme-challenge" ] && [ "$host_type" = "TXT" ] && [ "$host_address" = "$exclude_acme_token" ]; then
+            continue
+        fi
+        
+        if [ -n "$host_name" ] && [ -n "$host_type" ] && [ -n "$host_address" ]; then
+            host_params="${host_params}&HostName${record_count}=${host_name}&RecordType${record_count}=${host_type}&Address${record_count}=${host_address}&TTL${record_count}=${host_ttl}"
+            record_count=$((record_count + 1))
+        fi
+    done <<< "$(echo -e "$parsed_records")"
+    
+    # Add ACME challenge record if requested
+    if [ "$include_acme_challenge" = "true" ]; then
+        host_params="${host_params}&HostName${record_count}=_acme-challenge&RecordType${record_count}=TXT&Address${record_count}=${acme_value}&TTL${record_count}=300"
+    fi
+    
+    # Make the setHosts API call
+    local api_url=$(build_api_url "namecheap.domains.dns.setHosts" "$wan_ip" "$host_params")
+    local set_response=$(curl -s "$api_url")
+    
+    if [ $? -ne 0 ]; then
+        echo "Error: Failed to set DNS records" 2>/dev/null
+        exit 1
+    fi
+    
+    check_api_error "$set_response" "Set DNS records"
+    
+    # Check if setHosts was successful
+    if echo "$set_response" | grep -q 'IsSuccess="true"'; then
+        return 0
+    else
+        echo "Error: Unexpected response from setHosts API"
+        echo "$set_response"
+        exit 1
+    fi
+}
+
+# Provider-specific certify implementation
+provider_certify() {
+    local domain="$1"
+    local validation_token="$2"
+    local wan_ip="$3"
+    
+    # Get existing DNS records
+    provider_get_dns_records "$domain" "$wan_ip"
+    
+    # Set DNS records with ACME challenge
+    provider_set_dns_records "$domain" "$wan_ip" "$PARSED_RECORDS" "true" "$validation_token"
+}
+
+# Provider-specific cleanup implementation
+provider_cleanup() {
+    local domain="$1"
+    local validation_token="$2"
+    local wan_ip="$3"
+    
+    # Get existing DNS records
+    provider_get_dns_records "$domain" "$wan_ip"
+    
+    # Set DNS records excluding the ACME challenge (pass token as 6th param to filter it out)
+    provider_set_dns_records "$domain" "$wan_ip" "$PARSED_RECORDS" "false" "" "$validation_token"
+}
+
+# Provider-specific purchase implementation (placeholder)
+provider_purchase() {
+    local domain="$1"
+    
+    # TODO: Implement domain purchase logic for Namecheap
+    # Expected environment variables:
+    #   PROVIDER_USERNAME - Namecheap username
+    #   PROVIDER_API_KEY - Namecheap API key
+    #   WAN_IP (optional) - may be needed for API calls
+    # 
+    # The domain to purchase is passed as $1: $domain
+    # 
+    # Reference: https://www.namecheap.com/support/api/methods/domains/create/
+    
+    echo "Purchase not yet implemented for $PROVIDER_NAME"
+    echo "Domain to purchase: $domain"
+    exit 1
+}

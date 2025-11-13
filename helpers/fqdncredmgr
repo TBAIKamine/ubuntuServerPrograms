@@ -1,0 +1,169 @@
+#!/bin/bash
+
+# this command manages FQDN credentials for domain name providers
+# it does not set any dns, and does not purchase domains
+
+# List of acceptable providers
+VALID_PROVIDERS=("namecheap.com")
+
+# Database path
+mkdir -p /etc/fqdncredmgr
+DB_PATH="/etc/fqdncredmgr/creds.db"
+
+# Function to display usage
+usage() {
+    cat << EOF
+Usage: fqdncredmgr <action> <provider> <username> <api_key>
+
+Actions:
+  add       - Add new credentials
+  update    - Update existing credentials
+  delete    - Delete credentials
+
+Providers:
+  namecheap.com
+
+Examples:
+  fqdncredmgr add namecheap.com myuser myapikey123
+  fqdncredmgr update namecheap.com myuser newapikey456
+  fqdncredmgr delete namecheap.com myuser
+EOF
+    exit 1
+}
+
+# Function to validate provider
+validate_provider() {
+    local provider="$1"
+    for valid in "${VALID_PROVIDERS[@]}"; do
+        if [ "$provider" = "$valid" ]; then
+            return 0
+        fi
+    done
+    return 1
+}
+
+# Function to initialize database
+init_db() {
+    if [ ! -f "$DB_PATH" ]; then
+        sqlite3 "$DB_PATH" << EOF
+CREATE TABLE IF NOT EXISTS creds (
+id INTEGER PRIMARY KEY AUTOINCREMENT,
+username TEXT NOT NULL,
+key TEXT NOT NULL,
+provider TEXT NOT NULL,
+UNIQUE(provider, username)
+);
+EOF
+        chmod 640 "$DB_PATH"
+        chown root:root "$DB_PATH"
+    fi
+}
+
+# Function to add credentials
+add_creds() {
+    local provider="$1"
+    local username="$2"
+    local api_key="$3"
+    
+    sqlite3 "$DB_PATH" << EOF
+INSERT INTO creds (username, key, provider) VALUES ('$username', '$api_key', '$provider');
+EOF
+    
+    if [ $? -eq 0 ]; then
+        echo "Credentials added successfully for $username@$provider"
+    else
+        echo "Error: Failed to add credentials. They may already exist." >&2
+        exit 1
+    fi
+}
+
+# Function to update credentials
+update_creds() {
+    local provider="$1"
+    local username="$2"
+    local api_key="$3"
+    
+    sqlite3 "$DB_PATH" << EOF
+UPDATE creds SET key = '$api_key' WHERE provider = '$provider' AND username = '$username';
+EOF
+    
+    local changes=$(sqlite3 "$DB_PATH" "SELECT changes();")
+    if [ "$changes" -gt 0 ]; then
+        echo "Credentials updated successfully for $username@$provider"
+    else
+        echo "Error: No matching credentials found to update." >&2
+        exit 1
+    fi
+}
+
+# Function to delete credentials
+delete_creds() {
+    local provider="$1"
+    local username="$2"
+    
+    sqlite3 "$DB_PATH" << EOF
+DELETE FROM creds WHERE provider = '$provider' AND username = '$username';
+EOF
+    
+    local changes=$(sqlite3 "$DB_PATH" "SELECT changes();")
+    if [ "$changes" -gt 0 ]; then
+        echo "Credentials deleted successfully for $username@$provider"
+    else
+        echo "Error: No matching credentials found to delete." >&2
+        exit 1
+    fi
+}
+
+# Main script logic
+if [ $# -lt 3 ]; then
+    echo "Error: Insufficient arguments" >&2
+    usage
+fi
+
+ACTION="$1"
+PROVIDER="$2"
+USERNAME="$3"
+API_KEY="$4"
+
+# Validate action
+case "$ACTION" in
+    add|update)
+        if [ $# -ne 4 ]; then
+            echo "Error: $ACTION requires 4 arguments" >&2
+            usage
+        fi
+        ;;
+    delete)
+        if [ $# -ne 3 ]; then
+            echo "Error: delete requires 3 arguments" >&2
+            usage
+        fi
+        ;;
+    *)
+        echo "Error: Invalid action '$ACTION'" >&2
+        usage
+        ;;
+esac
+
+# Validate provider
+if ! validate_provider "$PROVIDER"; then
+    echo "Error: Invalid provider '$PROVIDER'" >&2
+    echo "Valid providers: ${VALID_PROVIDERS[*]}" >&2
+    exit 1
+fi
+
+# Initialize database
+init_db
+
+# Execute action
+case "$ACTION" in
+    add)
+        add_creds "$PROVIDER" "$USERNAME" "$API_KEY"
+        ;;
+    update)
+        update_creds "$PROVIDER" "$USERNAME" "$API_KEY"
+        ;;
+    delete)
+        delete_creds "$PROVIDER" "$USERNAME"
+        ;;
+esac

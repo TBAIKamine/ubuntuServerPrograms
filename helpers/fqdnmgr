@@ -1,0 +1,260 @@
+#!/bin/bash
+# this script is designed to provision new domains: purchasing them, setting up the acme DNS record.
+# it uses registrars creds saved in sqlite db.
+# TODO: more error handling.
+
+# Get the directory where this script is located
+PROVIDERS_DIR="/etc/fqdnmgr/providers"
+
+# Database configuration
+DB_PATH="/etc/letsencrypt/creds.db"
+
+# Function to get credentials from database and export them for provider use
+get_credentials() {
+    local registrar="$1"
+    local function_type="$2"
+    
+    # Check database exists
+    if [ ! -f "$DB_PATH" ]; then
+        echo "Error: Database file $DB_PATH not found"
+        exit 1
+    fi
+    
+    # Query for provider credentials
+    local creds=$(sqlite3 "$DB_PATH" "SELECT username, api_key FROM credentials WHERE provider='$registrar' LIMIT 1;" 2>/dev/null)
+    
+    # Parse the credentials (format: username|api_key)
+    PROVIDER_USERNAME=$(echo "$creds" | cut -d'|' -f1)
+    PROVIDER_API_KEY=$(echo "$creds" | cut -d'|' -f2)
+    
+    if [ -z "$creds" ]; then
+        if [ "$function_type" = "certify" ]; then
+            echo "No credentials found for $registrar in database"
+            echo "Would you like to add credentials now? (y/n):"
+            read -r response
+            if [ "$response" = "y" ] || [ "$response" = "Y" ]; then
+                echo "Enter username:"
+                read -r PROVIDER_USERNAME
+                echo "Enter API key:"
+                read -r PROVIDER_API_KEY
+                sqlite3 "$DB_PATH" "INSERT INTO credentials (provider, username, api_key) VALUES ('$registrar', '$PROVIDER_USERNAME', '$PROVIDER_API_KEY');"
+            else
+                exit 1
+            fi
+        else
+            echo "Error: No credentials found for $registrar in database"
+            exit 1
+        fi
+    fi
+    
+    if [ -z "$PROVIDER_USERNAME" ] || [ -z "$PROVIDER_API_KEY" ]; then
+        echo "USERNAME or API_KEY is empty. Please fix that first. bye"
+        exit 1
+    fi
+    
+    # Export for provider use
+    export PROVIDER_USERNAME
+    export PROVIDER_API_KEY
+}
+
+# Load provider plugin
+load_provider() {
+    local registrar="$1"
+    local provider_file="$PROVIDERS_DIR/${registrar}.provider"
+    
+    if [ ! -f "$provider_file" ]; then
+        echo "Error: Provider file not found for '$registrar'"
+        echo "Expected: $provider_file"
+        echo ""
+        echo "Available providers:"
+        for provider in "$PROVIDERS_DIR"/*.provider; do
+            if [ -f "$provider" ]; then
+                basename "$provider" .provider
+            fi
+        done
+        exit 1
+    fi
+    
+    # Source the provider file to load its functions
+    source "$provider_file"
+}
+
+# Function to display usage information
+usage() {
+    echo "Usage: $0 <function> <registrar> [arguments...]"
+    echo "Available functions:"
+    echo "  certify <REGISTRAR>           - Set up DNS challenge for SSL certificate"
+    echo "  purchase <REGISTRAR> <FQDN>   - Purchase a domain"
+    echo "  cleanup <REGISTRAR>           - Clean up DNS challenge records"
+    echo ""
+    echo "Available providers:"
+    for provider in "$PROVIDERS_DIR"/*.provider; do
+        if [ -f "$provider" ]; then
+            echo "  - $(basename "$provider" .provider)"
+        fi
+    done
+    exit 1
+}
+
+# Check for help flag
+if [ "$1" = "--help" ] || [ "$1" = "-h" ]; then
+    usage
+fi
+
+# Check if at least one argument is provided
+if [ $# -lt 1 ]; then
+    usage
+fi
+
+# Get the function name from the first argument
+FUNCTION_NAME="$1"
+shift  # Remove the first argument, leaving any additional arguments
+
+# Check if the function exists and call it
+case "$FUNCTION_NAME" in
+    "certify")
+        if [ $# -lt 1 ]; then
+            echo "Error: certify function requires REGISTRAR argument"
+            echo "Usage: $0 certify <REGISTRAR>"
+            exit 1
+        fi
+        REGISTRAR="$1"
+        certify "$REGISTRAR"
+        ;;
+    "purchase")
+        if [ $# -lt 2 ]; then
+            echo "Error: purchase function requires REGISTRAR and FQDN arguments"
+            echo "Usage: $0 purchase <REGISTRAR> <FQDN>"
+            exit 1
+        fi
+        REGISTRAR="$1"
+        FQDN="$2"
+        purchase "$REGISTRAR" "$FQDN"
+        ;;
+    "cleanup")
+        if [ $# -lt 1 ]; then
+            echo "Error: cleanup function requires REGISTRAR argument"
+            echo "Usage: $0 cleanup <REGISTRAR>"
+            exit 1
+        fi
+        REGISTRAR="$1"
+        cleanup "$REGISTRAR"
+        ;;
+    *)
+        echo "Error: Unknown function '$FUNCTION_NAME'"
+        echo "Available functions: certify, purchase, cleanup"
+        exit 1
+        ;;
+esac
+
+
+# Common initialization for certify and cleanup - DRY principle
+init_provider_for_dns_operation() {
+    local registrar="$1"
+    local operation="$2"  # "certify" or "cleanup"
+    
+    # Check required environment variables
+    if [ -z "$CERTBOT_DOMAIN" ]; then
+        echo "Error: CERTBOT_DOMAIN environment variable not set" 2>/dev/null
+        exit 1
+    fi
+    
+    if [ -z "$CERTBOT_VALIDATION" ]; then
+        echo "Error: CERTBOT_VALIDATION environment variable not set" 2>/dev/null
+        exit 1
+    fi
+    
+    # Load the provider
+    load_provider "$registrar"
+    
+    # Check database
+    if [ ! -f "$DB_PATH" ]; then
+        echo "Error: Database file $DB_PATH not found"
+        exit 1
+    fi
+    
+    # Get credentials for provider
+    get_credentials "$registrar" "$operation"
+    
+    # Get WAN IP (required by some providers)
+    WAN_IP=$(curl -s ifconfig.me)
+    if [ -z "$WAN_IP" ]; then
+        echo "Error: Failed to determine WAN IP"
+        exit 1
+    fi
+    
+    # Export for provider use
+    export WAN_IP
+}
+
+# Main certify function - orchestrates DNS challenge setup
+certify() {
+    local registrar="$1"
+    init_provider_for_dns_operation "$registrar" "certify"
+    
+    # Call provider-specific certify implementation
+    provider_certify "$CERTBOT_DOMAIN" "$CERTBOT_VALIDATION" "$WAN_IP"
+    
+    # Check DNS propagation
+    check_dns_propagation "$CERTBOT_DOMAIN" "$CERTBOT_VALIDATION"
+}
+
+# Main cleanup function - orchestrates DNS challenge removal
+cleanup() {
+    local registrar="$1"
+    init_provider_for_dns_operation "$registrar" "cleanup"
+    
+    # Call provider-specific cleanup implementation
+    provider_cleanup "$CERTBOT_DOMAIN" "$CERTBOT_VALIDATION" "$WAN_IP"
+}
+
+# Main purchase function - orchestrates domain purchase
+purchase() {
+    local registrar="$1"
+    local fqdn="$2"
+    
+    # Load the provider
+    load_provider "$registrar"
+    
+    # Check database
+    if [ ! -f "$DB_PATH" ]; then
+        echo "Error: Database file $DB_PATH not found"
+        exit 1
+    fi
+    
+    # Get credentials for provider
+    get_credentials "$registrar" "purchase"
+    
+    # Export FQDN for provider use
+    export FQDN="$fqdn"
+    
+    # Call provider-specific purchase implementation
+    provider_purchase "$fqdn"
+}
+
+# Function to check DNS propagation for ACME TXT record
+check_dns_propagation() {
+    local domain="$1"
+    local expected_value="$2"
+    local acme_domain="_acme-challenge.$domain"
+    local max_wait=600  # 10 minutes
+    local wait_interval=5
+    local elapsed=0
+    
+    while [ $elapsed -lt $max_wait ]; do
+        # Query Google DNS API for TXT record
+        local response=$(curl -s "https://dns.google/resolve?name=${acme_domain}&type=TXT" 2>/dev/null)
+        
+        if [ $? -eq 0 ] && [ -n "$response" ]; then
+            # Check if the expected value is in the response
+            if echo "$response" | grep -q "\"$expected_value\""; then
+                return 0  # Success - DNS propagated
+            fi
+        fi
+        
+        sleep $wait_interval
+        elapsed=$((elapsed + wait_interval))
+    done
+    
+    return 1  # Timeout - DNS did not propagate within max_wait
+}

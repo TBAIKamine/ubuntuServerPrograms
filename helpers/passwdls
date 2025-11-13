@@ -1,0 +1,34 @@
+#!/bin/bash
+SUDOERS_FILE="/etc/sudoers.d/secret_broker"
+
+# Check if argument is provided
+if [ $# -ne 1 ]; then
+  echo "Usage: $0 {on|off}"
+  exit 1
+fi
+
+case "$1" in
+  on)
+    # Enable passwordless sudo
+    if ! grep -q "NOPASSWD" "$SUDOERS_FILE"; then
+      echo "user ALL = NOPASSWD: /usr/local/bin/sudo-broker.sh" | tee -a "$SUDOERS_FILE" > /dev/null
+      echo "Passwordless sudo enabled"
+    else
+      echo "Passwordless sudo already enabled"
+    fi
+    ;;
+  off)
+    # Disable passwordless sudo
+    if grep -q "NOPASSWD" "$SUDOERS_FILE"; then
+      sed -i.bak "/NOPASSWD/d" "$SUDOERS_FILE"
+      echo "Passwordless sudo disabled"
+    else
+      echo "Passwordless sudo already disabled"
+    fi
+    ;;
+  *)
+    echo "Invalid argument: $1"
+    echo "Usage: $0 {on|off}"
+    exit 1
+    ;;
+esac

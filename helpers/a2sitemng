@@ -1,0 +1,575 @@
+#!/bin/bash
+# things this script does in order:
+# 1. creates apache2 config file for a new given domain if doesnt exist already.
+# 2. checks if domain is purchaed via whois (skipped if proxypass mode),  prompts to purchase it if desired.
+# 3. if already purchased, prompts to set up DNS record for ACME challenge if certbot is installed and registered.
+# 4. finishes apache2 config file for the domain.
+
+# Function to create Apache configuration
+do_config(){
+    if [ ! -d "/var/www/$FQDN_BASE" ]; then
+    mkdir -p /var/www/$FQDN_BASE/log
+    chown -R www-data:www-data /var/www/$FQDN_BASE
+    if [ "$PROXYPASS" = true ]; then
+        cat > /etc/apache2/sites-available/"$FQDN_BASE".conf << EOF
+<VirtualHost *:80>
+    ServerName $FQDN
+    ErrorLog /var/www/$FQDN_BASE/log/error.log
+    CustomLog /var/www/$FQDN_BASE/log/access.log combined
+</VirtualHost>
+EOF
+      else
+    cat > /etc/apache2/sites-available/"$FQDN_BASE".conf << EOF
+<VirtualHost *:80>
+    ServerName $FQDN
+    ServerAlias *.$FQDN
+    DocumentRoot /var/www/$FQDN_BASE/public_html
+    ErrorLog /var/www/$FQDN_BASE/log/error.log
+    CustomLog /var/www/$FQDN_BASE/log/access.log combined
+</VirtualHost>
+EOF
+      fi
+    fi
+}
+
+# Function to check prerequisites
+check_prerequisites() {
+    # Check if Apache is installed
+    if ! command -v apache2 >/dev/null 2>&1 && ! command -v httpd >/dev/null 2>&1; then
+        echo "Error: Apache is not installed" >&2
+        exit 1
+    fi
+    
+    # Check required Apache modules
+    local required_modules="rewrite ssl"
+    if [ "$PROXYPASS" = true ]; then
+        required_modules="$required_modules proxy proxy_http"
+    fi
+    
+    for module in $required_modules; do
+        if ! apache2ctl -M 2>/dev/null | grep -q "${module}_module"; then
+            echo "Warning: Apache module 'mod_$module' does not appear to be enabled" >&2
+            echo "You may need to run: a2enmod $module" >&2
+        fi
+    done
+}
+
+# Function to handle domain purchase prompt
+handle_domain_purchase() {
+    local fqdn="$1"
+    local registrar="$2"
+    
+    echo "Domain $fqdn does not appear to be purchased."
+    if read -t 30 -p "Would you like to purchase it? [y/N] (timeout in 30s): " purchase; then
+        :
+    else
+        purchase="N"
+    fi
+    purchase=${purchase:-N}
+    
+    case "$purchase" in
+        [Yy]* )
+            if [ -n "$registrar" ]; then
+                echo "Attempting to purchase $fqdn via fqdnmgr with registrar '$registrar'..."
+                if command -v fqdnmgr >/dev/null 2>&1; then
+                    if fqdnmgr purchase "$registrar" "$fqdn"; then
+                        echo "Purchase command completed."
+                        echo "Note: Verify purchase status at your registrar's dashboard."
+                        return 0
+                    else
+                        echo "Warning: fqdnmgr purchase exited with an error."
+                        echo "The purchase feature may not be fully implemented yet."
+                        return 1
+                    fi
+                else
+                    echo "fqdnmgr not found. Please install fqdnmgr or manually purchase the domain."
+                    return 1
+                fi
+            else
+                echo "Registrar not specified. Use -r/--registrar option for automated purchase."
+                echo "Please manually purchase $fqdn from a registrar."
+                return 1
+            fi
+            ;;
+        * )
+            echo "User declined domain purchase; continuing with Apache configuration."
+            return 1
+            ;;
+    esac
+}
+
+usage() {
+    cat << EOF
+Usage: $0 [OPTIONS] [FQDN] [REGISTRAR]
+
+Arguments:
+  FQDN        Fully Qualified Domain Name
+  REGISTRAR   Optional registrar identifier (no validation; stored for later use)
+
+Options:
+    -d, --fqdn          Specify FQDN (accepts both "-d example.com" and "-d=example.com")
+    -r, --registrar     Optional registrar identifier (no validation; stored for later use)
+    -pp, --proxypass    Enable proxypass mode for subdomains (skips registrar validation and uses wildcard certs)
+    -s, --secured       Use HTTPS for ProxyPass (only with -pp, default is HTTP)
+    -p, --port          Proxy port for ProxyPass (only with -pp)
+    -sn, --servername   Custom server name (only with -pp, default is subdomain.domain.extension)
+    --swc               Subdomain wildcard mode: creates minimal config with ServerName subdomain.* and calls a2wcrecalc
+    -h, --help          Show this help message
+
+Examples:
+  $0 example.com
+    $0 -d example.com
+    $0 --fqdn=example.com
+    $0 -d example.com -r namecheap
+    $0 -pp -d something.example.com -p 3000
+    $0 -pp -d something.example.com -p 8080 -s -sn something.example.com
+    $0 --swc -d subdomain.*
+EOF
+}
+
+# Initialize variables
+FQDN=""
+REGISTRAR=""
+PROXYPASS=false
+SWC=false
+SECURED=false
+PROXY_PORT=""
+SERVER_NAME=""
+
+# Parse command line arguments
+while [[ $# -gt 0 ]]; do
+    case $1 in
+        -d=*|--fqdn=*)
+            # Assigned-style: -d=example.com or --fqdn=example.com
+            FQDN="${1#*=}"
+            shift
+            ;;
+        -d|--fqdn)
+            # Separate-arg style: -d example.com or --fqdn example.com
+            FQDN="$2"
+            shift 2
+            ;;
+        -m=*|--email=*)
+            # Assigned-style: -m=you@example.com or --email=you@example.com
+            EMAIL="${1#*=}"
+            shift
+            ;;
+        -m|--email)
+            # Separate-arg style: -m you@example.com or --email you@example.com
+            EMAIL="$2"
+            shift 2
+            ;;
+        -r=*|--registrar=*)
+            # Assigned-style: -r=namecheap or --registrar=namecheap
+            REGISTRAR="${1#*=}"
+            shift
+            ;;
+        -r|--registrar)
+            # Separate-arg style: -r namecheap or --registrar namecheap
+            REGISTRAR="$2"
+            shift 2
+            ;;
+        -pp|--proxypass)
+            # Enable proxypass mode
+            PROXYPASS=true
+            shift
+            ;;
+        --swc)
+            # Enable subdomain wildcard mode
+            SWC=true
+            shift
+            ;;
+        -s|--secured)
+            # Use HTTPS for ProxyPass
+            SECURED=true
+            shift
+            ;;
+        -p=*|--port=*)
+            # Assigned-style: -p=3000 or --port=3000
+            PROXY_PORT="${1#*=}"
+            shift
+            ;;
+        -p|--port)
+            # Separate-arg style: -p 3000 or --port 3000
+            PROXY_PORT="$2"
+            shift 2
+            ;;
+        -sn=*|--servername=*)
+            # Assigned-style: -sn=something.example.com or --servername=something.example.com
+            SERVER_NAME="${1#*=}"
+            shift
+            ;;
+        -sn|--servername)
+            # Separate-arg style: -sn something.example.com or --servername something.example.com
+            SERVER_NAME="$2"
+            shift 2
+            ;;
+        -h|--help)
+            usage
+            ;;
+        -*)
+            echo "Unknown option $1"
+            usage
+            ;;
+        *)
+            # Positional arguments
+            if [ -z "$FQDN" ]; then
+                FQDN="$1"
+            else
+                echo "Too many arguments"
+                usage
+            fi
+            shift
+            ;;
+    esac
+done
+
+# Validate registrar (skip if proxypass mode)
+if [ "$PROXYPASS" = false ] && [ "$SWC" = false ] && [ -n "$REGISTRAR" ]; then
+    case "$REGISTRAR" in
+        "namecheap")
+            REGISTRAR="namecheap.com"
+            ;;
+        *)
+            echo "Error: Unsupported registrar: $REGISTRAR" >&2
+            exit 1
+            ;;
+    esac
+fi
+
+# Validate SWC mode
+if [ "$SWC" = true ]; then
+    # Check that FQDN has format subdomain.* (asterisk at the end)
+    if [[ ! "$FQDN" =~ ^[a-zA-Z0-9-]+\.\*$ ]]; then
+        echo "Error: In subdomain wildcard mode (--swc), FQDN must be in format 'subdomain.*' (e.g., 'api.*')" >&2
+        exit 1
+    fi
+    
+    # Extract subdomain name (remove the .* suffix)
+    SUBDOMAIN="${FQDN%.*}"
+    
+    # SWC and PROXYPASS are mutually exclusive
+    if [ "$PROXYPASS" = true ]; then
+        echo "Error: Cannot use both --swc (subdomain wildcard) and --pp (proxypass) modes together" >&2
+        exit 1
+    fi
+    
+    # These options are not valid with SWC
+    if [ "$SECURED" = true ]; then
+        echo "Error: -s/--secured option is not valid with subdomain wildcard mode (--swc)" >&2
+        exit 1
+    fi
+    if [ -n "$PROXY_PORT" ]; then
+        echo "Error: -p/--port option is not valid with subdomain wildcard mode (--swc)" >&2
+        exit 1
+    fi
+    if [ -n "$SERVER_NAME" ]; then
+        echo "Error: -sn/--servername option is not valid with subdomain wildcard mode (--swc)" >&2
+        exit 1
+    fi
+    if [ -n "$REGISTRAR" ]; then
+        echo "Error: -r/--registrar option is not valid with subdomain wildcard mode (--swc)" >&2
+        exit 1
+    fi
+fi
+
+# Validate proxypass-specific options
+if [ "$PROXYPASS" = true ]; then
+    # PROXY_PORT is required for proxypass mode
+    if [ -z "$PROXY_PORT" ]; then
+        echo "Error: Proxy port (-p/--port) is required when using proxypass mode (-pp)" >&2
+        exit 1
+    fi
+    # Set default server name if not provided
+    if [ -z "$SERVER_NAME" ]; then
+        SERVER_NAME="$FQDN"
+    fi
+else
+    # These options are only valid with proxypass
+    if [ "$SECURED" = true ]; then
+        echo "Error: -s/--secured option is only valid with proxypass mode (-pp)" >&2
+        exit 1
+    fi
+    if [ -n "$PROXY_PORT" ]; then
+        echo "Error: -p/--port option is only valid with proxypass mode (-pp)" >&2
+        exit 1
+    fi
+    if [ -n "$SERVER_NAME" ]; then
+        echo "Error: -sn/--servername option is only valid with proxypass mode (-pp)" >&2
+        exit 1
+    fi
+fi
+
+# below  FQDN redundancies are necessary because this script is modular.
+# Validate FQDN existence
+if [ -z "$FQDN" ]; then
+    echo "Error: FQDN is required" >&2
+    exit 1
+fi
+
+# Validate FQDN format (skip for SWC mode as it has its own validation)
+if [ "$SWC" = false ] && [[ ! "$FQDN" =~ ^[a-zA-Z0-9]([a-zA-Z0-9-]*[a-zA-Z0-9])?(\.[a-zA-Z0-9]([a-zA-Z0-9-]*[a-zA-Z0-9])?)*$ ]]; then
+    echo "Error: Invalid FQDN format: $FQDN" >&2
+    exit 1
+fi
+
+# Check prerequisites
+check_prerequisites
+
+# SPECIAL HANDLING FOR SWC MODE - Exit early after creating minimal config
+if [ "$SWC" = true ]; then
+    # Create minimal config file with just ServerName subdomain.*
+    CONF="/etc/apache2/sites-available/${SUBDOMAIN}.conf"
+    
+    # Check if config already exists
+    if [ -f "$CONF" ]; then
+        echo "Warning: $CONF already exists."
+        if read -t 30 -p "Overwrite $CONF? [Y/n] (auto-accept in 30s): " overwrite; then
+            :
+        else
+            overwrite="Y"
+        fi
+        overwrite=${overwrite:-Y}
+        case "$overwrite" in
+            [Nn]* )
+                echo "Keeping existing $CONF. Exiting."
+                exit 0
+                ;;
+            * )
+                echo "Overwriting $CONF"
+                ;;
+        esac
+    fi
+    
+    # Create the minimal config file
+    cat > "$CONF" << EOF
+ServerName $FQDN
+EOF
+    
+    echo "Created subdomain wildcard config: $CONF"
+    
+    # Call a2wcrecalc with the subdomain
+    if command -v a2wcrecalc >/dev/null 2>&1; then
+        echo "Calling a2wcrecalc $SUBDOMAIN..."
+        a2wcrecalc "$SUBDOMAIN"
+    else
+        echo "Warning: a2wcrecalc not found. Please run it manually: a2wcrecalc $SUBDOMAIN"
+    fi
+    
+    # Call a2wcrecalc-dms if it exists
+    if command -v a2wcrecalc-dms >/dev/null 2>&1; then
+        echo "Calling a2wcrecalc-dms..."
+        a2wcrecalc-dms
+    fi
+    
+    echo "Subdomain wildcard configuration complete for $FQDN"
+    exit 0
+fi
+
+# Set up variables based on mode and cache whois lookup
+if [ "$PROXYPASS" = true ]; then
+    # In proxypass mode, extract subdomain and base domain
+    if [[ "$FQDN" =~ ^([^.]+)\.(.+)$ ]]; then
+        SUBDOMAIN="${BASH_REMATCH[1]}"
+        BASE_DOMAIN="${BASH_REMATCH[2]}"
+        FQDN_BASE="$SUBDOMAIN"
+        CERT_DOMAIN="$BASE_DOMAIN"
+    else
+        echo "Error: In proxypass mode, FQDN must be a subdomain (e.g., something.example.com)" >&2
+        exit 1
+    fi
+    REGISTRAR_FQDN=""
+else
+    # Standard mode - calculate FQDN_BASE once and cache whois lookup
+    FQDN_BASE="${FQDN%%.*}"
+    CERT_DOMAIN="$FQDN"
+    REGISTRAR_INFO=$(whois "$FQDN" | grep -iE '(Registrar URL|Referral URL|URL)' | head -n 1)
+    REGISTRAR_URL=$(echo "$REGISTRAR_INFO" | awk '{print $NF}')
+    REGISTRAR_FQDN=$(echo "$REGISTRAR_URL" | sed -E 's/^\w+:\/\///; s/^www\.//; s/\/.*//')
+    
+    if [ -n "$REGISTRAR" ] && [ -z "$REGISTRAR_FQDN" ]; then
+        echo "Error: Domain $FQDN does not appear to be purchased." >&2
+        exit 1
+    fi
+    if [ -n "$REGISTRAR" ] && [ -n "$REGISTRAR_FQDN" ] && [ "$REGISTRAR" != "$REGISTRAR_FQDN" ]; then
+        echo "Warning: Registrar flag ($REGISTRAR) does not match detected registrar ($REGISTRAR_FQDN)" >&2
+    fi
+fi
+
+#Validations passed, proceed with configuration
+
+# STEP 1: Configure Apache site
+    if [ ! -d "/var/www/$FQDN_BASE" ]; then
+    mkdir -p /var/www/$FQDN_BASE/log
+    chown -R www-data:www-data /var/www/$FQDN_BASE
+    if [ "$PROXYPASS" = true ]; then
+        cat > /etc/apache2/sites-available/"$FQDN_BASE".conf << EOF
+<VirtualHost *:80>
+    ServerName $FQDN
+    ErrorLog /var/www/$FQDN_BASE/log/error.log
+    CustomLog /var/www/$FQDN_BASE/log/access.log combined
+</VirtualHost>
+EOF
+      else
+    cat > /etc/apache2/sites-available/"$FQDN_BASE".conf << EOF
+<VirtualHost *:80>
+    ServerName $FQDN
+    ServerAlias *.$FQDN
+    DocumentRoot /var/www/$FQDN_BASE/public_html
+    ErrorLog /var/www/$FQDN_BASE/log/error.log
+    CustomLog /var/www/$FQDN_BASE/log/access.log combined
+</VirtualHost>
+EOF
+      fi
+    fi
+
+    # Check for existing apache site config and prompt to override (30s auto-accept -> yes)
+CONF="/etc/apache2/sites-available/${FQDN_BASE}.conf"
+if [ -f "$CONF" ]; then
+    echo "Warning: $CONF already exists."
+    # Prompt the user with a 30 second timeout. If timeout or empty input, default to Yes (auto-accept).
+    if read -t 30 -p "Overwrite $CONF? [Y/n] (auto-accept in 30s): " overwrite; then
+        :
+    else
+        overwrite="Y"
+    fi
+    overwrite=${overwrite:-Y}
+    case "$overwrite" in
+        [Nn]* )
+            echo "Keeping existing $CONF. Exiting."
+            exit 0
+            ;;
+        * )
+            echo "Overwriting $CONF"
+            do_config
+            ;;
+    esac
+else
+    do_config
+fi
+
+# STEP 2: Check if domain is purchased (skip in proxypass mode)
+DOMAIN_PURCHASED=false
+if [ "$PROXYPASS" = false ]; then
+    # Use cached whois lookup from initialization
+    if [ -z "$REGISTRAR_FQDN" ]; then
+        handle_domain_purchase "$FQDN" "$REGISTRAR"
+    else
+        # Domain already purchased
+        DOMAIN_PURCHASED=true
+    fi
+elif [ "$PROXYPASS" = true ]; then
+    # In proxypass mode, check if base domain is purchased
+    BASE_REGISTRAR_INFO=$(whois "$BASE_DOMAIN" | grep -iE '(Registrar URL|Referral URL|URL)' | head -n 1)
+    BASE_REGISTRAR_URL=$(echo "$BASE_REGISTRAR_INFO" | awk '{print $NF}')
+    BASE_REGISTRAR_FQDN=$(echo "$BASE_REGISTRAR_URL" | sed -E 's/^\w+:\/\///; s/^www\.//; s/\/.*//')
+    
+    if [ -n "$BASE_REGISTRAR_FQDN" ]; then
+        DOMAIN_PURCHASED=true
+    fi
+fi
+
+# STEP 3: Set up SSL certificates
+if [ "$PROXYPASS" = true ]; then
+    # In proxypass mode, check if base domain is purchased and registrar is set
+    if [ "$DOMAIN_PURCHASED" = true ] && [ -n "$REGISTRAR" ]; then
+        # Check if certbot is installed and registered
+        if command -v certbot >/dev/null 2>&1; then
+            # Check if certbot is registered by looking for account files
+            if [ -d "/etc/letsencrypt/accounts" ] && [ "$(find /etc/letsencrypt/accounts -mindepth 1 -type d 2>/dev/null | wc -l)" -gt 0 ]; then
+                echo "Certbot is installed and registered."
+                # Check if wildcard certificate already exists for base domain
+                if [ -f "/etc/letsencrypt/live/$CERT_DOMAIN/fullchain.pem" ]; then
+                    echo "Wildcard certificate already exists for $CERT_DOMAIN"
+                else
+                    echo "Requesting wildcard certificate for $CERT_DOMAIN..."
+                    certbot -d "*.$CERT_DOMAIN" -d "$CERT_DOMAIN" \
+                        --manual \
+                        --preferred-challenges dns \
+                        --manual-auth-hook "fqdnmgr certify $REGISTRAR" \
+                        --manual-cleanup-hook "fqdnmgr cleanup $REGISTRAR" \
+                        --manual-public-ip-logging-ok \
+                        certonly
+                fi
+            else
+                echo "Certbot is installed but not registered. Please run 'certbot register' first."
+            fi
+        else
+            echo "Certbot is not installed. Please install certbot to use SSL certificates."
+        fi
+    elif [ "$PROXYPASS" = true ] && [ -z "$REGISTRAR" ]; then
+        echo "Warning: Registrar not specified. Cannot obtain SSL certificate automatically."
+        echo "Please specify registrar with -r/--registrar option to enable automatic SSL."
+    fi
+fi
+
+# STEP 4: Finalize Apache configuration
+# Remove DocumentRoot and ServerAlias lines from apache config (combine sed operations)
+sed -i -e '/DocumentRoot/d' -e '/ServerAlias/d' /etc/apache2/sites-available/"$FQDN_BASE".conf
+
+# Add HTTPS redirect to the existing <VirtualHost *:80> block
+sed -i '/<VirtualHost \*:80>/a\    RewriteEngine On\n    RewriteCond %{HTTPS} !=on\n    RewriteRule ^(.*)$ https://%{HTTP_HOST}%{REQUEST_URI} [L,R=301]' /etc/apache2/sites-available/"$FQDN_BASE".conf
+#add certbot directives
+if [ "$PROXYPASS" = true ]; then
+    # Use wildcard certificates from base domain - no DocumentRoot for proxypass
+    # Set protocol based on secured flag
+    if [ "$SECURED" = true ]; then
+        PROXY_PROTOCOL="https"
+    else
+        PROXY_PROTOCOL="http"
+    fi
+    
+    # Use custom server name or default
+    ACTUAL_SERVER_NAME="$SERVER_NAME"
+    
+    cat >> /etc/apache2/sites-available/"$FQDN_BASE".conf << EOF
+<IfModule mod_ssl.c>
+    <VirtualHost *:443>
+        ServerName $ACTUAL_SERVER_NAME
+        ErrorLog /var/www/$FQDN_BASE/log/ssl_error.log
+        CustomLog /var/www/$FQDN_BASE/log/ssl_access.log combined
+        SSLEngine on
+        SSLCertificateFile /etc/letsencrypt/live/$CERT_DOMAIN/fullchain.pem
+        SSLCertificateKeyFile /etc/letsencrypt/live/$CERT_DOMAIN/privkey.pem
+        SSLProxyEngine On
+        SSLProxyVerify none
+        ProxyPreserveHost On
+        ProxyPass / $PROXY_PROTOCOL://localhost:$PROXY_PORT/
+        ProxyPassReverse / $PROXY_PROTOCOL://localhost:$PROXY_PORT/
+    </VirtualHost>
+</IfModule>
+EOF
+else
+    # Use certificates for the specific domain
+    cat >> /etc/apache2/sites-available/"$FQDN_BASE".conf << EOF
+<IfModule mod_ssl.c>
+    <VirtualHost *:443>
+        ServerName $FQDN
+        ServerAlias *.$FQDN
+        DocumentRoot /var/www/$FQDN_BASE/public_html
+        ErrorLog /var/www/$FQDN_BASE/log/ssl_error.log
+        CustomLog /var/www/$FQDN_BASE/log/ssl_access.log combined
+        SSLEngine on
+        SSLCertificateFile /etc/letsencrypt/live/$FQDN/fullchain.pem
+        SSLCertificateKeyFile /etc/letsencrypt/live/$FQDN/privkey.pem
+    </VirtualHost>
+</IfModule>
+EOF
+fi
+
+# Enable site and reload Apache with error handling
+if a2ensite "$FQDN_BASE".conf; then
+    echo "Successfully enabled site: $FQDN_BASE"
+else
+    echo "Error: Failed to enable site $FQDN_BASE" >&2
+    exit 1
+fi
+
+if systemctl reload apache2; then
+    echo "Successfully reloaded Apache"
+else
+    echo "Error: Failed to reload Apache. Check configuration with: apache2ctl configtest" >&2
+    exit 1
+fi
+
+echo "Apache configuration complete for $FQDN"

@@ -1,0 +1,24 @@
+#!/bin/bash
+
+# 1. Path to the stored hash
+HASH_FILE="/etc/sudo_secret.hash"
+
+# 2. Read the expected hash
+EXPECTED_HASH=$(cat $HASH_FILE)
+
+# 3. Read the plain-text secret from the environment variable (DEVICE_ACCESS)
+PROVIDED_SECRET="${DEVICE_ACCESS}"
+
+# 4. Hash the provided secret
+PROVIDED_HASH=$(echo -n "$PROVIDED_SECRET" | sha256sum | awk '{print $1}')
+
+# 5. Compare the hashes
+if [ "$PROVIDED_HASH" == "$EXPECTED_HASH" ] && [ -n "$PROVIDED_SECRET" ]; then
+  # If hashes match, execute the command passed as arguments to the script
+  exec "$@"
+else
+  # Failure: log the attempt and exit
+  logger "Unauthorized sudo attempt on $USER from $SSH_CONNECTION"
+  echo "sudo access denied (DEVICE_ACCESS mismatch)."
+  exit 1
+fi
