@@ -1,4 +1,21 @@
 #!/bin/bash
+#check if /etc/cryptsetup-keys.d exists
+if [ -d /etc/cryptsetup-keys.d ]; then
+  # ask if wants to execute init.sh first
+  echo "Do you want to execute init.sh first? [y/n]: "
+  echo "it is extremely important and even essential for security however
+  you only need to run this once for the first time when you install ubuntu server."
+  for i in {5..1}; do
+    printf "\r(auto-selects 'y' in %d seconds): " "$i"
+    read -t 1 -n 1 -r EXECUTE_INIT && break
+  done
+  if [ -z "$EXECUTE_INIT" ]; then
+    EXECUTE_INIT="y"
+  fi
+  if [[ "$EXECUTE_INIT" =~ ^[Yy]$ ]]; then
+      ./init.sh
+  fi
+fi
 
 # Source the menu script to load functions and variables
 source ./helpers/menu.sh
@@ -54,7 +71,10 @@ is_valid_fqdn() {
 # require user input.
 if [ "${OPTIONS[passwordless_sudoer]}" = "1" ]; then
   while true; do
-    read -r -s -p "Set SUDO protection secret: " SUDO_SECRET
+    for i in {10..1}; do
+      printf "\rSet SUDO protection secret (auto-skip in %d seconds): " "$i"
+      read -t 1 -n 1 -s -r SUDO_SECRET && break
+    done
     read_status=$?
     echo
     if [ $read_status -ne 0 ]; then
@@ -77,9 +97,11 @@ fi
 # might require user input
 if [ "${OPTIONS[webserver]}" = "1" ]; then
   if [ "${OPTIONS[apache_domains]}" = "1" ]; then
-    read -r -p "extremely recommended to provide the main FQDN now, other programs if also are being installed will be configured in one go. provide it now ? [y/n]: " ADD_FQDN_NOW
-    if [ $? -ne 0 ]; then
-      echo -e "\nCancelled." >&2
+    for i in {10..1}; do
+      printf "\rextremely recommended to provide the main FQDN now, other programs if also are being installed will be configured in one go. provide it now ? [y/n] (auto-selects 'n' in %d seconds): " "$i"
+      read -t 1 -n 1 -r ADD_FQDN_NOW && break
+    done
+    if [ -z "$ADD_FQDN_NOW" ]; then
       ADD_FQDN_NOW="n"
     fi
     if [ "$ADD_FQDN_NOW" = "y" ] || [ "$ADD_FQDN_NOW" = "Y" ]; then
@@ -115,7 +137,10 @@ fi
 # require user input.
 if [ "${OPTIONS[phpmyadmin]}" = "1" ]; then
   while true; do
-    read -r -s -p "set phpmyadmin database user password: " PHPMYADMIN_SECRET
+    for i in {10..1}; do
+      printf "\rset phpmyadmin database user password (auto-skip in %d seconds): " "$i"
+      read -t 1 -s -r PHPMYADMIN_SECRET && break
+    done
     read_status=$?
     echo 
     if [ $read_status -ne 0 ]; then
@@ -139,6 +164,10 @@ fi
 if [ "${OPTIONS[certbot]}" = "1" ]; then
   cert_bot_email_prompt(){
     while true; do
+      for i in {10..1}; do
+        printf "\rcertbot email (auto-skip in %d seconds): " "$i"
+        read -t 1 -r CERTBOT_EMAIL && break
+      done
       read -r -p "certbot email is required when installing certbot: " CERTBOT_EMAIL
       if [ $? -ne 0 ]; then
         echo -e "\nCancelled. Skipping certbot email setup." >&2
@@ -213,12 +242,17 @@ fi
 # might require user input
 if [ "${OPTIONS[docker_mailserver]}" = "1" ]; then
   SKIP_DMS=false
-  while true; do
-    read -r -p "docker mailserver requires a hostname at least, that or provide an email
-  1- hostname (FQDN)
-  2- email (recommended)
-  provide a number or c to cancel: " DMS_CHOICE
-
+  while true; do  
+    for i in {10..1}; do
+      printf "\rdocker mailserver requires a hostname at least, that or provide an email
+      1- hostname (FQDN)
+      2- email (recommended)
+      provide a number or c to cancel (auto-cancels in %d seconds): " "$i"
+      read -t 1 -r DMS_CHOICE && break
+    done
+    if [ -z "$DMS_CHOICE" ]; then
+      DMS_CHOICE="c"
+    fi
     if [ $? -ne 0 ]; then
       echo -e "\nCancelled. Skipping docker mailserver setup." >&2
       SKIP_DMS=true
@@ -317,25 +351,35 @@ print_status() {
 # the actual install logic.
 # everything below does not require user input, thus all will be installed in the order intended.
 if [ -n "$SUDO_SECRET" ]; then
+  if [ -x "/usr/local/bin/passwdless_sudoer.sh" ]; then
+    print_status "Passwordless sudoer already installed. Skipping... "
+    echo
+  else
     print_status "Installing passwordless sudoer... "
     bash ./helpers/passwdless_sudoer.sh >>./log 2>&1 &
     bash ./helpers/progress.sh $!
     echo
+  fi
 fi
 
 if [ "${OPTIONS[webserver]}" = "1" ]; then
-  print_status "Installing webserver (Apache, PHP, MariaDB)... "
-  {
-    apt install apache2 php php-fpm mariadb-server sqlite3 php-sqlite3 -y
-    a2enmod proxy_fcgi setenvif rewrite ssl proxy_http sqlite3
-    a2enconf php*-fpm
-    a2dissite 000-default.conf
-    rm /etc/apache2/sites-available/*
-    systemctl restart php8.3-fpm
-    systemctl restart apache2
-  } >>./log 2>&1 &
-  bash ./helpers/progress.sh $!
-  echo
+  if dpkg -s apache2 php mariadb-server &>/dev/null; then
+    print_status "Webserver (Apache, PHP, MariaDB) already installed. Skipping... "
+    echo
+  else
+    print_status "Installing webserver (Apache, PHP, MariaDB)... "
+    {
+      apt install apache2 php php-fpm mariadb-server sqlite3 php-sqlite3 -y
+      a2enmod proxy_fcgi setenvif rewrite ssl proxy_http sqlite3
+      a2enconf php*-fpm
+      a2dissite 000-default.conf
+      rm /etc/apache2/sites-available/*
+      systemctl restart php8.3-fpm
+      systemctl restart apache2
+    } >>./log 2>&1 &
+    bash ./helpers/progress.sh $!
+    echo
+  fi
 fi
 
 if [ "${OPTIONS[apache_domains]}" = "1" ]; then
@@ -377,166 +421,213 @@ if [ "${OPTIONS[apache_domains]}" = "1" ]; then
 
 fi
 
-if [ "${OPTIONS[certbot]}" = "1" ]; then
-  print_status "Installing Certbot... "
-  {
-    apt install certbot -y
-    if [ -n "$CERTBOT_EMAIL" ]; then
-      certbot register --non-interactive --agree-tos -m $CERTBOT_EMAIL
-    fi
-  } >>./log 2>&1 &
-  bash ./helpers/progress.sh $!
-  echo
-fi
-
-if [ -n "$FQDN" ]; then
-  print_status "Configuring main FQDN ($FQDN)... "
-  a2sitemg -d "$FQDN" >>./log 2>&1 &
-  bash ./helpers/progress.sh $!
-  echo
-fi
-
-if [ "${OPTIONS[fail2ban_vpn_bypass]}" = "1" ]; then
-    print_status "Installing Fail2ban with VPN bypass... "
-    ./vpn_bypass.sh >>./log 2>&1 &
-    bash ./helpers/progress.sh $!
+if [ "${OPTIONS[apache_domains]}" = "1" ]; then
+  if [ -x "/usr/local/bin/a2sitemng" ] && [ -x "/usr/local/bin/fqdncredmgr" ] && [ -x "/usr/local/bin/fqdnmgr" ] && [ -x "/usr/local/bin/a2wcrecalc" ]; then
+    print_status "Apache domain management tools already installed. Skipping... "
     echo
-fi
-
-if [ "${OPTIONS[sharkvpn]}" = "1" ]; then
-  print_status "Installing Surfshark VPN... "
-  {
-    curl -f https://downloads.surfshark.com/linux/debian-install.sh --output surfshark-install.sh
-    sed -i '/^\$SUDO apt-get install -y surfshark$/,$d' surfshark-install.sh
-    sh surfshark-install.sh
-    apt-get install surfshark-vpn -y
-    rm surfshark-install.sh
-  } >>./log 2>&1 &
-  bash ./helpers/progress.sh $!
-  echo
-fi
-
-if [ "${OPTIONS[phpmyadmin]}" = "1" ]; then
-  if [ -z "$PHPMYADMIN_SECRET" ]; then
-    print_status "Installing phpMyAdmin... "
+  else
+    print_status "Installing Apache domain management tools... "
     {
-      apt install dbconfig-common -y
-      export DEBIAN_FRONTEND=noninteractive
-      debconf-set-selections <<< "phpmyadmin phpmyadmin/dbconfig-install boolean true"
-      debconf-set-selections <<< "phpmyadmin	phpmyadmin/mysql/app-pass	password $PHPMYADMIN_SECRET"
-      debconf-set-selections <<< "phpmyadmin	phpmyadmin/password-confirm	password $PHPMYADMIN_SECRET"
-      debconf-set-selections <<< "phpmyadmin phpmyadmin/reconfigure-webserver multiselect apache2"
-      apt install phpmyadmin -y
+      cp $ABS_PATH/helpers/a2sitemng /usr/local/bin/a2sitemng
+      chmod +x /usr/local/bin/a2sitemng
+      chown root:root /usr/local/bin/a2sitemng
+      chmod 550 /usr/local/bin/a2sitemng
+      cp $ABS_PATH/helpers/fqdncredmgr /usr/local/bin/fqdncredmgr
+      chmod +x /usr/local/bin/fqdncredmgr
+      chown root:root /usr/local/bin/fqdncredmgr
+      chmod 550 /usr/local/bin/fqdncredmgr
+      cp $ABS_PATH/helpers/fqdnmgr /usr/local/bin/fqdnmgr
+      chmod +x /usr/local/bin/fqdnmgr
+      chown root:root /usr/local/bin/fqdnmgr
+      chmod 550 /usr/local/bin/fqdnmgr
+      cp $ABS_PATH/helpers/a2wcrecalc /usr/local/bin/a2wcrecalc
+      chmod +x /usr/local/bin/a2wcrecalc
+      chown root:root /usr/local/bin/a2wcrecalc
+      chmod 550 /usr/local/bin/a2wcrecalc
+      hash -r
+      apt install whois -y
+      WAN_IP=$(curl -s https://api.ipify.org 2>/dev/null)
+      if [ -n "$WAN_IP" ]; then
+        echo "export WAN_IP=$WAN_IP" >> ~/.bashrc
+        export WAN_IP=$WAN_IP
+      fi
     } >>./log 2>&1 &
     bash ./helpers/progress.sh $!
     echo
   fi
 fi
 
+if [ "${OPTIONS[phpmyadmin]}" = "1" ]; then
+    if [ -z "$PHPMYADMIN_SECRET" ]; then
+      if dpkg -s phpmyadmin &>/dev/null; then
+        print_status "phpMyAdmin already installed. Skipping... "
+        echo
+      else
+        print_status "Installing phpMyAdmin... "
+        {
+          apt install dbconfig-common -y
+          export DEBIAN_FRONTEND=noninteractive
+          debconf-set-selections <<< "phpmyadmin phpmyadmin/dbconfig-install boolean true"
+          debconf-set-selections <<< "phpmyadmin\tphpmyadmin/mysql/app-pass\tpassword $PHPMYADMIN_SECRET"
+          debconf-set-selections <<< "phpmyadmin\tphpmyadmin/password-confirm\tpassword $PHPMYADMIN_SECRET"
+          debconf-set-selections <<< "phpmyadmin phpmyadmin/reconfigure-webserver multiselect apache2"
+          apt install phpmyadmin -y
+        } >>./log 2>&1 &
+        bash ./helpers/progress.sh $!
+        echo
+      fi
+    fi
+fi
+
 if [ "${OPTIONS[roundcube]}" = "1" ]; then
-  print_status "Installing Roundcube webmail... "
-  bash ./helpers/roundcube_install.sh >>./log 2>&1 &
-  bash ./helpers/progress.sh $!
-  echo
+  if [ -d "/var/www/html/roundcube" ]; then
+    print_status "Roundcube webmail already installed. Skipping... "
+    echo
+  else
+    print_status "Installing Roundcube webmail... "
+    bash ./helpers/roundcube_install.sh >>./log 2>&1 &
+    bash ./helpers/progress.sh $!
+    echo
+  fi
 fi
 
 if [ "${OPTIONS[wp_cli]}" = "1" ]; then
-  print_status "Installing WP-CLI... "
-  {
-    curl -O https://raw.githubusercontent.com/wp-cli/wp-cli/v2.8.1/utils/wp-cli-2.8.1.phar
-    chmod +x wp-cli-2.8.1.phar
-    mv wp-cli-2.8.1.phar /usr/local/bin/wp
-    chown user:user /usr/local/bin/wp
-  } >>./log 2>&1 &
-  bash ./helpers/progress.sh $!
-  echo
+  if [ -x "/usr/local/bin/wp" ]; then
+    print_status "WP-CLI already installed. Skipping... "
+    echo
+  else
+    print_status "Installing WP-CLI... "
+    {
+      curl -O https://raw.githubusercontent.com/wp-cli/wp-cli/v2.8.1/utils/wp-cli-2.8.1.phar
+      chmod +x wp-cli-2.8.1.phar
+      mv wp-cli-2.8.1.phar /usr/local/bin/wp
+      chown user:user /usr/local/bin/wp
+    } >>./log 2>&1 &
+    bash ./helpers/progress.sh $!
+    echo
+  fi
 fi
 
 if [ "${OPTIONS[pyenv_python]}" = "1" ]; then
-  print_status "Installing Pyenv and Python 3.13... "
-  {
-    apt install make build-essential libssl-dev zlib1g-dev \
-    libbz2-dev libreadline-dev libsqlite3-dev curl git \
-    libncursesw5-dev xz-utils tk-dev libxml2-dev libxmlsec1-dev libffi-dev liblzma-dev -y
-    curl -fsSL https://pyenv.run | bash
-    cat pyenv_profile.txt >> ~/.bashrc
-    PYENV_ROOT="$HOME/.pyenv"
-    [[ -d $PYENV_ROOT/bin ]] && PATH="$PYENV_ROOT/bin:$PATH"
-    hash -r
-    pyenv init - bash
-    pyenv virtualenv-init -
-    pyenv install 3.13
-    pyenv global 3.13
-  } >>./log 2>&1 &
-  bash ./helpers/progress.sh $!
-  echo
+  if command -v pyenv &>/dev/null && pyenv versions | grep -q "3.13"; then
+    print_status "Pyenv and Python 3.13 already installed. Skipping... "
+    echo
+  else
+    print_status "Installing Pyenv and Python 3.13... "
+    {
+      apt install make build-essential libssl-dev zlib1g-dev \
+      libbz2-dev libreadline-dev libsqlite3-dev curl git \
+      libncursesw5-dev xz-utils tk-dev libxml2-dev libxmlsec1-dev libffi-dev liblzma-dev -y
+      curl -fsSL https://pyenv.run | bash
+      cat pyenv_profile.txt >> ~/.bashrc
+      PYENV_ROOT="$HOME/.pyenv"
+      [[ -d $PYENV_ROOT/bin ]] && PATH="$PYENV_ROOT/bin:$PATH"
+      hash -r
+      pyenv init - bash
+      pyenv virtualenv-init -
+      pyenv install 3.13
+      pyenv global 3.13
+    } >>./log 2>&1 &
+    bash ./helpers/progress.sh $!
+    echo
+  fi
 fi
 
 if [ "${OPTIONS[podman]}" = "1" ]; then
-  print_status "Installing Podman... "
-  bash ./helpers/podman_install.sh >>./log 2>&1 &
-  bash ./helpers/progress.sh $!
-  echo
+  if command -v podman &>/dev/null; then
+    print_status "Podman already installed. Skipping... "
+    echo
+  else
+    print_status "Installing Podman... "
+    bash ./helpers/podman_install.sh >>./log 2>&1 &
+    bash ./helpers/progress.sh $!
+    echo
+  fi
 fi
 
 if [ "${OPTIONS[lazydocker]}" = "1" ]; then
-  print_status "Installing LazyDocker... "
-  {
-    export DIR=/usr/bin; curl -sL https://raw.githubusercontent.com/jesseduffield/lazydocker/master/scripts/install_update_linux.sh | sudo DIR=$DIR bash
-    chown user:user /usr/bin/lazydocker
-  } >>./log 2>&1 &
-  bash ./helpers/progress.sh $!
-  echo
+  if [ -x "/usr/bin/lazydocker" ]; then
+    print_status "LazyDocker already installed. Skipping... "
+    echo
+  else
+    print_status "Installing LazyDocker... "
+    {
+      export DIR=/usr/bin; curl -sL https://raw.githubusercontent.com/jesseduffield/lazydocker/master/scripts/install_update_linux.sh | sudo DIR=$DIR bash
+      chown user:user /usr/bin/lazydocker
+    } >>./log 2>&1 &
+    bash ./helpers/progress.sh $!
+    echo
+  fi
 fi
 
 if [ "${OPTIONS[portainer]}" = "1" ]; then
-  print_status "Installing Portainer... "
-  {
-    podman volume create portainer_data
-    if [ -n "$FQDN" ]; then
-      fqdnmgr -d "portainer.$FQDN" -pp -s -p 9443
-    fi
-    mkdir -p /opt/compose/portainer
-    cp $ABS_PATH/helpers/portainer-compose.yaml /opt/compose/portainer/compose.yaml
-  } >>./log 2>&1 &
-  bash ./helpers/progress.sh $!
-  echo
+  if podman volume inspect portainer_data &>/dev/null && [ -f "/opt/compose/portainer/compose.yaml" ]; then
+    print_status "Portainer already set up. Skipping... "
+    echo
+  else
+    print_status "Installing Portainer... "
+    {
+      podman volume create portainer_data
+      if [ -n "$FQDN" ]; then
+        fqdnmgr -d "portainer.$FQDN" -pp -s -p 9443
+      fi
+      mkdir -p /opt/compose/portainer
+      cp $ABS_PATH/helpers/portainer-compose.yaml /opt/compose/portainer/compose.yaml
+    } >>./log 2>&1 &
+    bash ./helpers/progress.sh $!
+    echo
+  fi
 fi
 
 if [ "${OPTIONS[docker_mailserver]}" = "1" ]; then
-  print_status "Installing Docker Mailserver... "
-  bash ./helpers/dms_install.sh >>./log 2>&1 &
-  bash ./helpers/progress.sh $!
-  echo
+  if [ -f "/opt/compose/mailserver/docker-compose.yml" ]; then
+    print_status "Docker Mailserver already set up. Skipping... "
+    echo
+  else
+    print_status "Installing Docker Mailserver... "
+    bash ./helpers/dms_install.sh >>./log 2>&1 &
+    bash ./helpers/progress.sh $!
+    echo
+  fi
 fi
 
 if [ "${OPTIONS[docker_mailserver]}" = "1" ] && [ "${OPTIONS[webserver]}" = "1" ] && [ "${OPTIONS[apache_domains]}" = "1" ]; then
-  print_status "Installing DMS Apache integration tool... "
-  {
-    cp $ABS_PATH/helpers/a2wcrecalc-dms /usr/local/bin/a2wcrecalc-dms
-    chmod +x /usr/local/bin/a2wcrecalc-dms
-    chown root:root /usr/local/bin/a2wcrecalc-dms
-    chmod 550 /usr/local/bin/a2wcrecalc-dms
-    hash -r
-  } >>./log 2>&1 &
-  bash ./helpers/progress.sh $!
-  echo
+  if [ -x "/usr/local/bin/a2wcrecalc-dms" ]; then
+    print_status "DMS Apache integration tool already installed. Skipping... "
+    echo
+  else
+    print_status "Installing DMS Apache integration tool... "
+    {
+      cp $ABS_PATH/helpers/a2wcrecalc-dms /usr/local/bin/a2wcrecalc-dms
+      chmod +x /usr/local/bin/a2wcrecalc-dms
+      chown root:root /usr/local/bin/a2wcrecalc-dms
+      chmod 550 /usr/local/bin/a2wcrecalc-dms
+      hash -r
+    } >>./log 2>&1 &
+    bash ./helpers/progress.sh $!
+    echo
+  fi
 fi
 
 if [ "${OPTIONS[gitea]}" = "1" ]; then
-  print_status "Installing Gitea... "
-  {
-    mkdir -p /opt/compose/gitea/gitea
-    cd /opt/compose/gitea
-    chown user:user *
-    chmod 755 -R gitea
-    cp $ABS_PATH/helpers/gitea-compose.yaml /opt/compose/gitea/compose.yaml
-    if [ -n "$FQDN" ]; then
-      fqdnmgr -d "gitea.$FQDN" -pp -p 3000
-    fi
-  } >>./log 2>&1 &
-  bash ./helpers/progress.sh $!
-  echo
+  if [ -f "/opt/compose/gitea/compose.yaml" ]; then
+    print_status "Gitea already set up. Skipping... "
+    echo
+  else
+    print_status "Installing Gitea... "
+    {
+      mkdir -p /opt/compose/gitea/gitea
+      cd /opt/compose/gitea
+      chown user:user *
+      chmod 755 -R gitea
+      cp $ABS_PATH/helpers/gitea-compose.yaml /opt/compose/gitea/compose.yaml
+      if [ -n "$FQDN" ]; then
+        fqdnmgr -d "gitea.$FQDN" -pp -p 3000
+      fi
+    } >>./log 2>&1 &
+    bash ./helpers/progress.sh $!
+    echo
+  fi
 fi
 
 if [ "${OPTIONS[gitea_runner]}" = "1" ]; then
@@ -545,17 +636,22 @@ if [ "${OPTIONS[gitea_runner]}" = "1" ]; then
 fi
 
 if [ "${OPTIONS[n8n]}" = "1" ]; then
-  print_status "Installing n8n... "
-  {
-    podman volume create n8n_data
-    mkdir -p /opt/compose/n8n
-    cp $ABS_PATH/helpers/n8n-compose.yaml /opt/compose/n8n/compose.yaml
-    if [ -n "$FQDN" ]; then
-      fqdnmgr -d "n8n.$FQDN" -pp -p 5678
-    fi
-  } >>./log 2>&1 &
-  bash ./helpers/progress.sh $!
-  echo
+  if podman volume inspect n8n_data &>/dev/null && [ -f "/opt/compose/n8n/compose.yaml" ]; then
+    print_status "n8n already set up. Skipping... "
+    echo
+  else
+    print_status "Installing n8n... "
+    {
+      podman volume create n8n_data
+      mkdir -p /opt/compose/n8n
+      cp $ABS_PATH/helpers/n8n-compose.yaml /opt/compose/n8n/compose.yaml
+      if [ -n "$FQDN" ]; then
+        fqdnmgr -d "n8n.$FQDN" -pp -p 5678
+      fi
+    } >>./log 2>&1 &
+    bash ./helpers/progress.sh $!
+    echo
+  fi
 fi
 
 if [ "${OPTIONS[selenium]}" = "1" ]; then
