@@ -97,8 +97,9 @@ fi
 # might require user input
 if [ "${OPTIONS[webserver]}" = "1" ]; then
   if [ "${OPTIONS[apache_domains]}" = "1" ]; then
+    printf "extremely recommended to provide the main FQDN now\nother programs if also are being installed will be configured in one go.\nprovide it now ? [y/n] \n"
     for i in {10..1}; do
-      printf "\rextremely recommended to provide the main FQDN now, other programs if also are being installed will be configured in one go. provide it now ? [y/n] (auto-selects 'n' in %d seconds): " "$i"
+      printf "\r(auto-selects 'n' in %d seconds): " "$i"
       read -t 1 -n 1 -r ADD_FQDN_NOW && break
     done
     if [ -z "$ADD_FQDN_NOW" ]; then
