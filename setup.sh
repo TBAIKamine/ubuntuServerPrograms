@@ -11,7 +11,25 @@ if [ -d /etc/cryptsetup-keys.d ]; then
   you only need to run this once for the first time when you install ubuntu server."
   for i in {5..1}; do
     printf "\r(auto-selects 'y' in %d seconds): " "$i"
-    read -t 1 -n 1 -r EXECUTE_INIT && break
+    if read -t 1 -n 1 -r EXECUTE_INIT 2>/dev/null; then
+      if [[ "$EXECUTE_INIT" == $'\x1b' ]]; then
+        read -t 0.1 -n 2 arrow 2>/dev/null
+        if [[ "$arrow" == "[A" || "$arrow" == "[B" || "$arrow" == "[C" || "$arrow" == "[D" ]]; then
+          printf "\r\033[K"
+          while true; do
+            read -n 1 userkey
+            if [[ "$userkey" == $'\x1b' ]]; then
+              read -t 0.1 -n 2 arrow2 2>/dev/null
+              printf "\r\033[K"
+              continue
+            fi
+            EXECUTE_INIT="$userkey"
+            break
+          done
+        fi
+      fi
+      break
+    fi
   done
   if [ -z "$EXECUTE_INIT" ]; then
     EXECUTE_INIT="y"
@@ -73,7 +91,25 @@ if [ "${OPTIONS[passwordless_sudoer]}" = "1" ]; then
   while true; do
     for i in {10..1}; do
       printf "\rSet SUDO protection secret (auto-skip in %d seconds): " "$i"
-      read -t 1 -n 1 -s -r SUDO_SECRET && break
+      if read -t 1 -n 1 -s -r SUDO_SECRET 2>/dev/null; then
+        if [[ "$SUDO_SECRET" == $'\x1b' ]]; then
+          read -t 0.1 -n 2 arrow 2>/dev/null
+          if [[ "$arrow" == "[A" || "$arrow" == "[B" || "$arrow" == "[C" || "$arrow" == "[D" ]]; then
+            printf "\r\033[K"
+            while true; do
+              read -n 1 -s userkey
+              if [[ "$userkey" == $'\x1b' ]]; then
+                read -t 0.1 -n 2 arrow2 2>/dev/null
+                printf "\r\033[K"
+                continue
+              fi
+              SUDO_SECRET="$userkey"
+              break
+            done
+          fi
+        fi
+        break
+      fi
     done
     read_status=$?
     echo
@@ -100,7 +136,25 @@ if [ "${OPTIONS[webserver]}" = "1" ]; then
     printf "extremely recommended to provide the main FQDN now\nother programs if also are being installed will be configured in one go.\nprovide it now ? [y/n] \n"
     for i in {10..1}; do
       printf "\r(auto-selects 'n' in %d seconds): " "$i"
-      read -t 1 -n 1 -r ADD_FQDN_NOW && break
+      if read -t 1 -n 1 -r ADD_FQDN_NOW 2>/dev/null; then
+        if [[ "$ADD_FQDN_NOW" == $'\x1b' ]]; then
+          read -t 0.1 -n 2 arrow 2>/dev/null
+          if [[ "$arrow" == "[A" || "$arrow" == "[B" || "$arrow" == "[C" || "$arrow" == "[D" ]]; then
+            printf "\r\033[K"
+            while true; do
+              read -n 1 userkey
+              if [[ "$userkey" == $'\x1b' ]]; then
+                read -t 0.1 -n 2 arrow2 2>/dev/null
+                printf "\r\033[K"
+                continue
+              fi
+              ADD_FQDN_NOW="$userkey"
+              break
+            done
+          fi
+        fi
+        break
+      fi
     done
     if [ -z "$ADD_FQDN_NOW" ]; then
       ADD_FQDN_NOW="n"
@@ -140,7 +194,25 @@ if [ "${OPTIONS[phpmyadmin]}" = "1" ]; then
   while true; do
     for i in {10..1}; do
       printf "\rset phpmyadmin database user password (auto-skip in %d seconds): " "$i"
-      read -t 1 -s -r PHPMYADMIN_SECRET && break
+      if read -t 1 -s -r PHPMYADMIN_SECRET 2>/dev/null; then
+        if [[ "$PHPMYADMIN_SECRET" == $'\x1b' ]]; then
+          read -t 0.1 -n 2 arrow 2>/dev/null
+          if [[ "$arrow" == "[A" || "$arrow" == "[B" || "$arrow" == "[C" || "$arrow" == "[D" ]]; then
+            printf "\r\033[K"
+            while true; do
+              read -n 1 -s userkey
+              if [[ "$userkey" == $'\x1b' ]]; then
+                read -t 0.1 -n 2 arrow2 2>/dev/null
+                printf "\r\033[K"
+                continue
+              fi
+              PHPMYADMIN_SECRET="$userkey"
+              break
+            done
+          fi
+        fi
+        break
+      fi
     done
     read_status=$?
     echo 
@@ -167,7 +239,25 @@ if [ "${OPTIONS[certbot]}" = "1" ]; then
     while true; do
       for i in {10..1}; do
         printf "\rcertbot email (auto-skip in %d seconds): " "$i"
-        read -t 1 -r CERTBOT_EMAIL && break
+        if read -t 1 -r CERTBOT_EMAIL 2>/dev/null; then
+          if [[ "$CERTBOT_EMAIL" == $'\x1b' ]]; then
+            read -t 0.1 -n 2 arrow 2>/dev/null
+            if [[ "$arrow" == "[A" || "$arrow" == "[B" || "$arrow" == "[C" || "$arrow" == "[D" ]]; then
+              printf "\r\033[K"
+              while true; do
+                read -n 1 userkey
+                if [[ "$userkey" == $'\x1b' ]]; then
+                  read -t 0.1 -n 2 arrow2 2>/dev/null
+                  printf "\r\033[K"
+                  continue
+                fi
+                CERTBOT_EMAIL="$userkey"
+                break
+              done
+            fi
+          fi
+          break
+        fi
       done
       read -r -p "certbot email is required when installing certbot: " CERTBOT_EMAIL
       if [ $? -ne 0 ]; then
@@ -249,7 +339,25 @@ if [ "${OPTIONS[docker_mailserver]}" = "1" ]; then
       1- hostname (FQDN)
       2- email (recommended)
       provide a number or c to cancel (auto-cancels in %d seconds): " "$i"
-      read -t 1 -r DMS_CHOICE && break
+      if read -t 1 -r DMS_CHOICE 2>/dev/null; then
+        if [[ "$DMS_CHOICE" == $'\x1b' ]]; then
+          read -t 0.1 -n 2 arrow 2>/dev/null
+          if [[ "$arrow" == "[A" || "$arrow" == "[B" || "$arrow" == "[C" || "$arrow" == "[D" ]]; then
+            printf "\r\033[K"
+            while true; do
+              read -n 1 userkey
+              if [[ "$userkey" == $'\x1b' ]]; then
+                read -t 0.1 -n 2 arrow2 2>/dev/null
+                printf "\r\033[K"
+                continue
+              fi
+              DMS_CHOICE="$userkey"
+              break
+            done
+          fi
+        fi
+        break
+      fi
     done
     if [ -z "$DMS_CHOICE" ]; then
       DMS_CHOICE="c"
