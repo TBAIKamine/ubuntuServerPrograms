@@ -1,13 +1,13 @@
 #!/bin/bash
 # LUKS TPM sealed passphrase keyslot
-{
+do_luks(){
     read -s -p "Please enter the final LUKS passphrase: " FINAL_PASSPHRASE
     echo
     read -s -p "Please confirm the final LUKS passphrase: " CONFIRMED_PASSPHRASE
     echo
     if [ "$FINAL_PASSPHRASE" != "$CONFIRMED_PASSPHRASE" ]; then
-    echo "Passphrases do not match. Exiting."
-    exit 1
+        echo "Passphrases do not match. Exiting."
+        return
     fi
     echo "Passphrases match. Proceeding with LUKS key addition and TPM2 binding..."
     printf "%s" "$FINAL_PASSPHRASE" | cryptsetup luksAddKey /dev/nvme0n1p5 --key-file /etc/cryptsetup-keys.d/luks_password.txt
@@ -23,15 +23,15 @@
     rm -dfr /etc/cryptsetup-keys.d
 }
 # GRUB Protection
-{
+do_grub(){
     # Password Protection
     read -r -s -p "set GRUB password: " GRUB_PASSWORD
     echo
     read -r -s -p "confirm GRUB password: " GRUB_PASSWORD_CONFIRM
     echo
     if [ "$GRUB_PASSWORD" != "$GRUB_PASSWORD_CONFIRM" ]; then
-    echo "Passwords do not match. Exiting."
-    exit 1
+        echo "Passwords do not match. Exiting."
+        return
     fi
     unset GRUB_PASSWORD_CONFIRM
     GRUB_HASH=$(echo "$GRUB_PASSWORD" | grub-mkpasswd-pbkdf2 | tail -n 1 | awk '{print $NF}')
@@ -47,7 +47,7 @@
     update-grub
 }
 # tty1 login
-{
+do_tty1(){
     # disable tty1 login
     systemctl mask getty@tty1.service
     echo "user" | tee /etc/denied_console_users
@@ -56,7 +56,13 @@
     # general SSH config adjustments
     if [[ -f /home/user/.ssh/authorized_keys && -s /home/user/.ssh/authorized_keys ]]; then
         sed -i 's|^#\?\(PasswordAuthentication\s\+\)\(yes\|no\).*$|\1no|; s|^#\?\(KbdInteractiveAuthentication\s\+\)\(yes\|no\).*$|\1no|' /etc/ssh/sshd_config
-        printf "\nMatch User user\n    AuthenticationMethods publickey\n" | tee -a /etc/ssh/sshd_config
+        if ! grep -q "^Match User user" /etc/ssh/sshd_config; then
+            printf "\nMatch User user\n    AuthenticationMethods publickey\n" | tee -a /etc/ssh/sshd_config
+        fi
         systemctl restart ssh
     fi
 }
+
+do_luks
+do_grub
+do_tty1
