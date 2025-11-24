@@ -50,8 +50,9 @@ if [ -d /etc/cryptsetup-keys.d ]; then
         # Add countdown before showing menu
         COUNTDOWN=10
         PAUSE=0
+        printf "\rContinue to tools install menu? [y/n] \n"
         while [ $COUNTDOWN -gt 0 ]; do
-          printf "\rContinue to tools install menu? [y/n] (auto-selects 'y' in %d seconds): " "$COUNTDOWN"
+          printf "\r(auto-selects 'y' in %d seconds): " "$COUNTDOWN"
           read -t 1 -n 1 -r USER_CONT 2>/dev/null
           if [ $? -eq 130 ]; then
             echo -e "\n\nInterrupted by user. Exiting..."
@@ -66,7 +67,7 @@ if [ -d /etc/cryptsetup-keys.d ]; then
               fi
               if [[ "$arrow" == "[A" || "$arrow" == "[B" || "$arrow" == "[C" || "$arrow" == "[D" ]]; then
                 PAUSE=1
-                printf "\rPaused. Please enter [y/n]: "
+                printf "\r\033[K"
                 while true; do
                   read -n 1 -r PAUSE_CONT 2>/dev/null
                   if [ $? -eq 130 ]; then
@@ -666,7 +667,7 @@ if [ "${OPTIONS[apache_domains]}" = "1" ]; then
     apt install whois -y
     WAN_IP=$(curl -s https://api.ipify.org 2>/dev/null)
     if [ -n "$WAN_IP" ]; then
-      echo "export WAN_IP=$WAN_IP" >> ~/.bashrc
+      echo "export WAN_IP=$WAN_IP" >> /home/user/.bashrc
       export WAN_IP=$WAN_IP
     fi
   } >>./log 2>&1 &
@@ -702,7 +703,7 @@ if [ "${OPTIONS[apache_domains]}" = "1" ]; then
       apt install whois -y
       WAN_IP=$(curl -s https://api.ipify.org 2>/dev/null)
       if [ -n "$WAN_IP" ]; then
-        echo "export WAN_IP=$WAN_IP" >> ~/.bashrc
+        echo "export WAN_IP=$WAN_IP" >> /home/user/.bashrc
         export WAN_IP=$WAN_IP
       fi
     } >>./log 2>&1 &
@@ -772,15 +773,15 @@ if [ "${OPTIONS[pyenv_python]}" = "1" ]; then
       apt install make build-essential libssl-dev zlib1g-dev \
       libbz2-dev libreadline-dev libsqlite3-dev curl git \
       libncursesw5-dev xz-utils tk-dev libxml2-dev libxmlsec1-dev libffi-dev liblzma-dev -y
-      curl -fsSL https://pyenv.run | bash
-      cat pyenv_profile.txt >> ~/.bashrc
-      PYENV_ROOT="$HOME/.pyenv"
-      [[ -d $PYENV_ROOT/bin ]] && PATH="$PYENV_ROOT/bin:$PATH"
+      sudo -u user $(curl -fsSL https://pyenv.run | bash)
+      cat pyenv_profile.txt >> /home/user/.bashrc
+      sudo -u user $(PYENV_ROOT="/home/user/.pyenv")
+      [[ -d $PYENV_ROOT/bin ]] && sudo -u user $(PATH="$PYENV_ROOT/bin:$PATH")
       hash -r
-      pyenv init - bash
-      pyenv virtualenv-init -
-      pyenv install 3.13
-      pyenv global 3.13
+      sudo -u user pyenv init - bash
+      sudo -u user pyenv virtualenv-init -
+      sudo -u user pyenv install 3.13
+      sudo -u user pyenv global 3.13
     } >>./log 2>&1 &
     bash ./helpers/progress.sh $!
     echo

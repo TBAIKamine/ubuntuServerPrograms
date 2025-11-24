@@ -4,8 +4,9 @@ wget -O /var/www/mail.tar.gz https://github.com/roundcube/roundcubemail/releases
 tar -xf /var/www/mail.tar.gz --directory /var/www
 mv /var/www/roundcube* /var/www/mail
 rm /var/www/mail.tar.gz
-chown -R www-data /var/www/mail
+mkdir -p /var/www/mail/db
 sqlite3 /var/www/mail/db/mainDatabase.sqlite3 < /var/www/mail/SQL/sqlite.initial.sql
+chown -R www-data /var/www/mail/db/mainDatabase.sqlite3
 if [ ! -f /var/www/mail/config/config.inc.php ]; then
 	cp /var/www/mail/config/config.inc.php.sample /var/www/mail/config/config.inc.php
 fi
