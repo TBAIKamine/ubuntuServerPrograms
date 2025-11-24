@@ -224,6 +224,7 @@ toggle_option() {
 # Fancy menu with proper box drawing
 draw_fancy_menu() {
     update_dependencies
+    clear
     
     echo "╔══════════════════════════════════════════════════════════════════════════════════════════════╗"
     echo "║                            Ubuntu Server OS Provisioning Setup                               ║"

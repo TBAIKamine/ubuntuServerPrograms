@@ -3,9 +3,8 @@
 trap 'echo -e "\n\nInterrupted by user. Exiting..."; exit 130' INT
 ABS_PATH=$(dirname "$(realpath "$0")")
 
-#check if /etc/cryptsetup-keys.d exists
+# ask if wants to execute init.sh first
 if [ -d /etc/cryptsetup-keys.d ]; then
-  # ask if wants to execute init.sh first
   echo "Do you want to execute init.sh first? [y/n]: "
   echo "it is extremely important and even essential for security however
   you only need to run this once for the first time when you install ubuntu server."
@@ -36,6 +35,49 @@ if [ -d /etc/cryptsetup-keys.d ]; then
   fi
   if [[ "$EXECUTE_INIT" =~ ^[Yy]$ ]]; then
       ./init.sh
+        # Add countdown before showing menu
+        COUNTDOWN=10
+        PAUSE=0
+        while [ $COUNTDOWN -gt 0 ]; do
+          printf "\rContinue to tools install menu? [y/n] (auto-selects 'y' in %d seconds): " "$COUNTDOWN"
+          read -t 1 -n 1 -r USER_CONT 2>/dev/null
+          if [ $? -eq 0 ]; then
+            if [[ "$USER_CONT" == $'\x1b' ]]; then
+              read -t 0.1 -n 2 arrow 2>/dev/null
+              if [[ "$arrow" == "[A" || "$arrow" == "[B" || "$arrow" == "[C" || "$arrow" == "[D" ]]; then
+                PAUSE=1
+                printf "\rPaused. Please enter [y/n]: "
+                while true; do
+                  read -n 1 -r PAUSE_CONT 2>/dev/null
+                  if [[ "$PAUSE_CONT" =~ ^[Yy]$ ]]; then
+                    USER_CONT="y"
+                    break
+                  elif [[ "$PAUSE_CONT" =~ ^[Nn]$ ]]; then
+                    USER_CONT="n"
+                    break
+                  fi
+                done
+                break
+              fi
+            elif [[ "$USER_CONT" =~ ^[Yy]$ || "$USER_CONT" == " " || "$USER_CONT" == $'\n' ]]; then
+              USER_CONT="y"
+              break
+            elif [[ "$USER_CONT" =~ ^[Nn]$ ]]; then
+              USER_CONT="n"
+              break
+            fi
+          fi
+          COUNTDOWN=$((COUNTDOWN-1))
+        done
+        if [ -z "$USER_CONT" ]; then
+          USER_CONT="y"
+        fi
+        if [[ "$USER_CONT" =~ ^[Yy]$ ]]; then
+          clear
+        else
+          echo -e "\nExiting as requested."
+          exit 0
+        fi
   fi
 fi
 
