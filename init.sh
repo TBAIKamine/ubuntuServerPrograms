@@ -1,6 +1,7 @@
 #!/bin/bash
 # LUKS TPM sealed passphrase keyslot
 do_luks(){
+    apt update -y && apt install clevis -y
     echo
     read -s -p "Please enter the final LUKS passphrase: " FINAL_PASSPHRASE
     echo
@@ -18,7 +19,9 @@ do_luks(){
     echo "binding and update complete, deleting previous all other keys and current script..."
     cryptsetup luksRemoveKey /dev/nvme0n1p5 --key-file /etc/cryptsetup-keys.d/dm_crypt-0.key
     cryptsetup luksRemoveKey /dev/nvme0n1p5 --key-file /etc/cryptsetup-keys.d/luks_password.txt
+    echo "deleting passphrase."
     rm /etc/cryptsetup-keys.d/luks_password.txt
+    echo "deleting dm_crypt-0 key."
     rm /etc/cryptsetup-keys.d/dm_crypt-0.key
     rm -dfr /etc/cryptsetup-keys.d
 }
