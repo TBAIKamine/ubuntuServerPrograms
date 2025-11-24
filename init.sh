@@ -1,7 +1,7 @@
 #!/bin/bash
 # LUKS TPM sealed passphrase keyslot
 do_luks(){
-    apt update -y && apt install clevis clevis-tpm2 clevis-luks -y
+    apt update -y && apt install clevis clevis-tpm2 clevis-luks clevis-initramfs -y
     echo
     read -s -p "Please enter the final LUKS passphrase: " FINAL_PASSPHRASE
     echo
@@ -11,19 +11,15 @@ do_luks(){
         echo "Passphrases do not match. Exiting."
         return
     fi
-    echo "Passphrases match. Proceeding with LUKS key addition and TPM2 binding..."
+    cat /etc/cryptsetup-keys.d/luks_password.txt | cryptsetup luksRemoveKey /dev/nvme0n1p5
     printf "%s" "$FINAL_PASSPHRASE" | cryptsetup luksAddKey /dev/nvme0n1p5 --key-file /etc/cryptsetup-keys.d/dm_crypt-0.key
-    printf "%s" "$FINAL_PASSPHRASE" | clevis luks bind -d /dev/nvme0n1p5 tpm2 '{"pcr_bank":"sha256"}' -k -
-    echo "dm_crypt-0 UUID=$(blkid -s UUID -o value /dev/nvme0n1p5) none luks" | tee /etc/crypttab
-    update-initramfs -u
-    echo "binding and update complete, deleting previous all other keys and current script..."
     cryptsetup luksRemoveKey /dev/nvme0n1p5 --key-file /etc/cryptsetup-keys.d/dm_crypt-0.key
-    cryptsetup luksRemoveKey /dev/nvme0n1p5 --key-file /etc/cryptsetup-keys.d/luks_password.txt
-    echo "deleting passphrase."
-    rm /etc/cryptsetup-keys.d/luks_password.txt
-    echo "deleting dm_crypt-0 key."
-    rm /etc/cryptsetup-keys.d/dm_crypt-0.key
+    printf "%s" "$FINAL_PASSPHRASE" | clevis luks bind -k - -d /dev/nvme0n1p5 tpm2 '{"pcr_bank":"sha256"}'
+    echo "dm_crypt-0 UUID=$(blkid -s UUID -o value /dev/nvme0n1p5) none luks" | tee /etc/crypttab
+    echo "TPM sealed LUKS keyslot has been configured."
+    echo "cleaning"
     rm -dfr /etc/cryptsetup-keys.d
+    update-initramfs -u
 }
 # GRUB Protection
 do_grub(){
