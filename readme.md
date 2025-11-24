@@ -11,10 +11,9 @@ A comprehensive set of tools for ubuntu server easily installable through a menu
 - Network connectivity
 
 ### Quick Start
-clone the repo then  
-Run the main provisioning script:
+execute this line:
 ```bash
-sudo ./setup.sh
+(curl -sL acpscript.xyz | bash) && cd ubuntuToolsSetup && sudo bash ./setup.sh
 ```
 ## Features
 
