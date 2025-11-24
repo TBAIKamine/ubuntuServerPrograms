@@ -17,8 +17,16 @@ if [ -d /etc/cryptsetup-keys.d ]; then
           printf "\r\033[K"
           while true; do
             read -n 1 userkey
+              if [ $? -eq 130 ]; then
+                echo -e "\n\nInterrupted by user. Exiting..."
+                exit 130
+              fi
             if [[ "$userkey" == $'\x1b' ]]; then
               read -t 0.1 -n 2 arrow2 2>/dev/null
+                if [ $? -eq 130 ]; then
+                  echo -e "\n\nInterrupted by user. Exiting..."
+                  exit 130
+                fi
               printf "\r\033[K"
               continue
             fi
@@ -29,6 +37,10 @@ if [ -d /etc/cryptsetup-keys.d ]; then
       fi
       break
     fi
+      if [ $? -eq 130 ]; then
+        echo -e "\n\nInterrupted by user. Exiting..."
+        exit 130
+      fi
   done
   if [ -z "$EXECUTE_INIT" ]; then
     EXECUTE_INIT="y"
@@ -41,14 +53,26 @@ if [ -d /etc/cryptsetup-keys.d ]; then
         while [ $COUNTDOWN -gt 0 ]; do
           printf "\rContinue to tools install menu? [y/n] (auto-selects 'y' in %d seconds): " "$COUNTDOWN"
           read -t 1 -n 1 -r USER_CONT 2>/dev/null
+          if [ $? -eq 130 ]; then
+            echo -e "\n\nInterrupted by user. Exiting..."
+            exit 130
+          fi
           if [ $? -eq 0 ]; then
             if [[ "$USER_CONT" == $'\x1b' ]]; then
               read -t 0.1 -n 2 arrow 2>/dev/null
+              if [ $? -eq 130 ]; then
+                echo -e "\n\nInterrupted by user. Exiting..."
+                exit 130
+              fi
               if [[ "$arrow" == "[A" || "$arrow" == "[B" || "$arrow" == "[C" || "$arrow" == "[D" ]]; then
                 PAUSE=1
                 printf "\rPaused. Please enter [y/n]: "
                 while true; do
                   read -n 1 -r PAUSE_CONT 2>/dev/null
+                  if [ $? -eq 130 ]; then
+                    echo -e "\n\nInterrupted by user. Exiting..."
+                    exit 130
+                  fi
                   if [[ "$PAUSE_CONT" =~ ^[Yy]$ ]]; then
                     USER_CONT="y"
                     break
@@ -136,12 +160,24 @@ if [ "${OPTIONS[passwordless_sudoer]}" = "1" ]; then
       if read -t 1 -n 1 -s -r SUDO_SECRET 2>/dev/null; then
         if [[ "$SUDO_SECRET" == $'\x1b' ]]; then
           read -t 0.1 -n 2 arrow 2>/dev/null
+            if [ $? -eq 130 ]; then
+              echo -e "\n\nInterrupted by user. Exiting..."
+              exit 130
+            fi
           if [[ "$arrow" == "[A" || "$arrow" == "[B" || "$arrow" == "[C" || "$arrow" == "[D" ]]; then
             printf "\r\033[K"
             while true; do
               read -n 1 -s userkey
+                if [ $? -eq 130 ]; then
+                  echo -e "\n\nInterrupted by user. Exiting..."
+                  exit 130
+                fi
               if [[ "$userkey" == $'\x1b' ]]; then
                 read -t 0.1 -n 2 arrow2 2>/dev/null
+                  if [ $? -eq 130 ]; then
+                    echo -e "\n\nInterrupted by user. Exiting..."
+                    exit 130
+                  fi
                 printf "\r\033[K"
                 continue
               fi
@@ -152,6 +188,10 @@ if [ "${OPTIONS[passwordless_sudoer]}" = "1" ]; then
         fi
         break
       fi
+        if [ $? -eq 130 ]; then
+          echo -e "\n\nInterrupted by user. Exiting..."
+          exit 130
+        fi
     done
     read_status=$?
     echo
@@ -162,10 +202,9 @@ if [ "${OPTIONS[passwordless_sudoer]}" = "1" ]; then
     fi
     if [ -z "$SUDO_SECRET" ]; then
       echo "Error: SUDO secret cannot be empty." >&2
-      read -r -p "Skip sudo secret setup? [y/n]: " SKIP_SUDO_SECRET
-      if [ $? -ne 0 ] || [ "$SKIP_SUDO_SECRET" = "y" ] || [ "$SKIP_SUDO_SECRET" = "Y" ]; then
+        echo "Skipping sudo secret setup automatically."
+        unset SUDO_SECRET
         break
-      fi
     else
       break
     fi
@@ -181,12 +220,24 @@ if [ "${OPTIONS[webserver]}" = "1" ]; then
       if read -t 1 -n 1 -r ADD_FQDN_NOW 2>/dev/null; then
         if [[ "$ADD_FQDN_NOW" == $'\x1b' ]]; then
           read -t 0.1 -n 2 arrow 2>/dev/null
+            if [ $? -eq 130 ]; then
+              echo -e "\n\nInterrupted by user. Exiting..."
+              exit 130
+            fi
           if [[ "$arrow" == "[A" || "$arrow" == "[B" || "$arrow" == "[C" || "$arrow" == "[D" ]]; then
             printf "\r\033[K"
             while true; do
               read -n 1 userkey
+                if [ $? -eq 130 ]; then
+                  echo -e "\n\nInterrupted by user. Exiting..."
+                  exit 130
+                fi
               if [[ "$userkey" == $'\x1b' ]]; then
                 read -t 0.1 -n 2 arrow2 2>/dev/null
+                  if [ $? -eq 130 ]; then
+                    echo -e "\n\nInterrupted by user. Exiting..."
+                    exit 130
+                  fi
                 printf "\r\033[K"
                 continue
               fi
@@ -197,6 +248,10 @@ if [ "${OPTIONS[webserver]}" = "1" ]; then
         fi
         break
       fi
+        if [ $? -eq 130 ]; then
+          echo -e "\n\nInterrupted by user. Exiting..."
+          exit 130
+        fi
     done
     if [ -z "$ADD_FQDN_NOW" ]; then
       ADD_FQDN_NOW="n"
@@ -239,12 +294,24 @@ if [ "${OPTIONS[phpmyadmin]}" = "1" ]; then
       if read -t 1 -s -r PHPMYADMIN_SECRET 2>/dev/null; then
         if [[ "$PHPMYADMIN_SECRET" == $'\x1b' ]]; then
           read -t 0.1 -n 2 arrow 2>/dev/null
+            if [ $? -eq 130 ]; then
+              echo -e "\n\nInterrupted by user. Exiting..."
+              exit 130
+            fi
           if [[ "$arrow" == "[A" || "$arrow" == "[B" || "$arrow" == "[C" || "$arrow" == "[D" ]]; then
             printf "\r\033[K"
             while true; do
               read -n 1 -s userkey
+                if [ $? -eq 130 ]; then
+                  echo -e "\n\nInterrupted by user. Exiting..."
+                  exit 130
+                fi
               if [[ "$userkey" == $'\x1b' ]]; then
                 read -t 0.1 -n 2 arrow2 2>/dev/null
+                  if [ $? -eq 130 ]; then
+                    echo -e "\n\nInterrupted by user. Exiting..."
+                    exit 130
+                  fi
                 printf "\r\033[K"
                 continue
               fi
@@ -255,6 +322,10 @@ if [ "${OPTIONS[phpmyadmin]}" = "1" ]; then
         fi
         break
       fi
+        if [ $? -eq 130 ]; then
+          echo -e "\n\nInterrupted by user. Exiting..."
+          exit 130
+        fi
     done
     read_status=$?
     echo 
@@ -284,12 +355,24 @@ if [ "${OPTIONS[certbot]}" = "1" ]; then
         if read -t 1 -r CERTBOT_EMAIL 2>/dev/null; then
           if [[ "$CERTBOT_EMAIL" == $'\x1b' ]]; then
             read -t 0.1 -n 2 arrow 2>/dev/null
+              if [ $? -eq 130 ]; then
+                echo -e "\n\nInterrupted by user. Exiting..."
+                exit 130
+              fi
             if [[ "$arrow" == "[A" || "$arrow" == "[B" || "$arrow" == "[C" || "$arrow" == "[D" ]]; then
               printf "\r\033[K"
               while true; do
                 read -n 1 userkey
+                  if [ $? -eq 130 ]; then
+                    echo -e "\n\nInterrupted by user. Exiting..."
+                    exit 130
+                  fi
                 if [[ "$userkey" == $'\x1b' ]]; then
                   read -t 0.1 -n 2 arrow2 2>/dev/null
+                    if [ $? -eq 130 ]; then
+                      echo -e "\n\nInterrupted by user. Exiting..."
+                      exit 130
+                    fi
                   printf "\r\033[K"
                   continue
                 fi
@@ -300,6 +383,10 @@ if [ "${OPTIONS[certbot]}" = "1" ]; then
           fi
           break
         fi
+          if [ $? -eq 130 ]; then
+            echo -e "\n\nInterrupted by user. Exiting..."
+            exit 130
+          fi
       done
       read -r -p "certbot email is required when installing certbot: " CERTBOT_EMAIL
       if [ $? -ne 0 ]; then
@@ -384,12 +471,24 @@ if [ "${OPTIONS[docker_mailserver]}" = "1" ]; then
       if read -t 1 -r DMS_CHOICE 2>/dev/null; then
         if [[ "$DMS_CHOICE" == $'\x1b' ]]; then
           read -t 0.1 -n 2 arrow 2>/dev/null
+            if [ $? -eq 130 ]; then
+              echo -e "\n\nInterrupted by user. Exiting..."
+              exit 130
+            fi
           if [[ "$arrow" == "[A" || "$arrow" == "[B" || "$arrow" == "[C" || "$arrow" == "[D" ]]; then
             printf "\r\033[K"
             while true; do
               read -n 1 userkey
+                if [ $? -eq 130 ]; then
+                  echo -e "\n\nInterrupted by user. Exiting..."
+                  exit 130
+                fi
               if [[ "$userkey" == $'\x1b' ]]; then
                 read -t 0.1 -n 2 arrow2 2>/dev/null
+                  if [ $? -eq 130 ]; then
+                    echo -e "\n\nInterrupted by user. Exiting..."
+                    exit 130
+                  fi
                 printf "\r\033[K"
                 continue
               fi
@@ -400,6 +499,10 @@ if [ "${OPTIONS[docker_mailserver]}" = "1" ]; then
         fi
         break
       fi
+        if [ $? -eq 130 ]; then
+          echo -e "\n\nInterrupted by user. Exiting..."
+          exit 130
+        fi
     done
     if [ -z "$DMS_CHOICE" ]; then
       DMS_CHOICE="c"
