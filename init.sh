@@ -33,14 +33,11 @@ do_grub(){
         return
     fi
     unset GRUB_PASSWORD_CONFIRM
-    GRUB_HASH=$(echo "$GRUB_PASSWORD" | grub-mkpasswd-pbkdf2 | tail -n 1 | awk '{print $NF}')
+    GRUB_HASH=$(echo -e "$GRUB_PASSWORD\n$GRUB_PASSWORD" | grub-mkpasswd-pbkdf2 | tail -n 1 | awk '{print $NF}')
     unset GRUB_PASSWORD
-    CONFIG_LINES=$(cat ./helpers/40_custom)
-    printf '%s\n' "$CONFIG_LINES" | sed -i '1i\
-        set superusers="admin"\
-        password_pbkdf2 '"admin"' '"${GRUB_HASH}"'' "/etc/grub.d/40_custom"
+    cat ./helpers/40_custom | while IFS= read -r line; do eval echo "$line"; done >> /etc/grub.d/40_custom
     # make that password required for any menuentry other than normal boot
-    sed -i 's/echo "menuentry '\''\$(echo "\$os" | grub_quote)'\'' \$\{CLASS\}/echo "menuentry '\''\$(echo "\$os" | grub_quote)'\'' --unrestricted \$\{CLASS\}/' /etc/grub.d/10_linux
+    sed -i 's/echo "menuentry '\''\$(echo "\$os" | grub_quote)'\'' \(${CLASS}\)/echo "menuentry '\''\$(echo "\$os" | grub_quote)'\'' --unrestricted \(${CLASS}\)/' /etc/grub.d/10_linux
     # Enforcing memory boundaries for devices
     sed -i 's/^GRUB_CMDLINE_LINUX=.*$/GRUB_CMDLINE_LINUX="intel_iommu=on"/' /etc/default/grub
     update-grub
