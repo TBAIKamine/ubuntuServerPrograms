@@ -1,7 +1,7 @@
 #!/bin/bash
 # LUKS TPM sealed passphrase keyslot
 do_luks(){
-    apt update -y && apt install clevis -y
+    apt update -y && apt install clevis clevis-tpm2 clevis-luks -y
     echo
     read -s -p "Please enter the final LUKS passphrase: " FINAL_PASSPHRASE
     echo
