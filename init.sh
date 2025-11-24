@@ -57,6 +57,6 @@
     if [[ -f /home/user/.ssh/authorized_keys && -s /home/user/.ssh/authorized_keys ]]; then
         sed -i 's|^#\?\(PasswordAuthentication\s\+\)\(yes\|no\).*$|\1no|; s|^#\?\(KbdInteractiveAuthentication\s\+\)\(yes\|no\).*$|\1no|' /etc/ssh/sshd_config
         printf "\nMatch User user\n    AuthenticationMethods publickey\n" | tee -a /etc/ssh/sshd_config
-        systemctl restart sshd
+        systemctl restart ssh
     fi
 }
