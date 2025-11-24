@@ -11,7 +11,7 @@ do_luks(){
         return
     fi
     echo "Passphrases match. Proceeding with LUKS key addition and TPM2 binding..."
-    printf "%s" "$FINAL_PASSPHRASE" | cryptsetup luksAddKey /dev/nvme0n1p5 --key-file /etc/cryptsetup-keys.d/luks_password.txt
+    printf "%s" "$FINAL_PASSPHRASE" | cryptsetup luksAddKey /dev/nvme0n1p5 --key-file /etc/cryptsetup-keys.d/dm_crypt-0.key
     printf "%s" "$FINAL_PASSPHRASE" | clevis luks bind -d /dev/nvme0n1p5 tpm2 '{"pcr_bank":"sha256"}' -k -
     echo "dm_crypt-0 UUID=$(blkid -s UUID -o value /dev/nvme0n1p5) none luks" | tee /etc/crypttab
     update-initramfs -u
@@ -20,7 +20,6 @@ do_luks(){
     cryptsetup luksRemoveKey /dev/nvme0n1p5 --key-file /etc/cryptsetup-keys.d/luks_password.txt
     rm /etc/cryptsetup-keys.d/luks_password.txt
     rm /etc/cryptsetup-keys.d/dm_crypt-0.key
-    rm /etc/cryptsetup-keys.d/init.sh
     rm -dfr /etc/cryptsetup-keys.d
 }
 # GRUB Protection
