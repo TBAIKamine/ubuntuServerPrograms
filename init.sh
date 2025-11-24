@@ -1,6 +1,7 @@
 #!/bin/bash
 # LUKS TPM sealed passphrase keyslot
 do_luks(){
+    echo
     read -s -p "Please enter the final LUKS passphrase: " FINAL_PASSPHRASE
     echo
     read -s -p "Please confirm the final LUKS passphrase: " CONFIRMED_PASSPHRASE
