@@ -156,8 +156,9 @@ is_valid_fqdn() {
 # require user input.
 if [ "${OPTIONS[passwordless_sudoer]}" = "1" ]; then
   while true; do
+    printf "\rSet SUDO protection secret: \n" "$i"
     for i in {10..1}; do
-      printf "\rSet SUDO protection secret (auto-skip in %d seconds): " "$i"
+      printf "\r(auto-skip in %d seconds)"
       if read -t 1 -n 1 -s -r SUDO_SECRET 2>/dev/null; then
         if [[ "$SUDO_SECRET" == $'\x1b' ]]; then
           read -t 0.1 -n 2 arrow 2>/dev/null
@@ -290,8 +291,9 @@ fi
 # require user input.
 if [ "${OPTIONS[phpmyadmin]}" = "1" ]; then
   while true; do
+    printf "\rset phpmyadmin database user password: \n"  "$i"
     for i in {10..1}; do
-      printf "\rset phpmyadmin database user password (auto-skip in %d seconds): " "$i"
+      printf "(auto-skip in %d seconds): "
       if read -t 1 -s -r PHPMYADMIN_SECRET 2>/dev/null; then
         if [[ "$PHPMYADMIN_SECRET" == $'\x1b' ]]; then
           read -t 0.1 -n 2 arrow 2>/dev/null
@@ -351,8 +353,9 @@ fi
 if [ "${OPTIONS[certbot]}" = "1" ]; then
   cert_bot_email_prompt(){
     while true; do
+      print "\rcertbot email: \n" "$i"
       for i in {10..1}; do
-        printf "\rcertbot email (auto-skip in %d seconds): " "$i"
+        printf "\r(auto-skip in %d seconds): "
         if read -t 1 -r CERTBOT_EMAIL 2>/dev/null; then
           if [[ "$CERTBOT_EMAIL" == $'\x1b' ]]; then
             read -t 0.1 -n 2 arrow 2>/dev/null
