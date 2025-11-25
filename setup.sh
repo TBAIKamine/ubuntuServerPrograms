@@ -1,8 +1,4 @@
 #!/bin/bash
-# Set up trap to handle Ctrl+C properly (after menu.sh which has its own trap)
-trap 'echo -e "\n\nInterrupted by user. Exiting..."; exit 130' INT
-ABS_PATH=$(dirname "$(realpath "$0")")
-
 # ask if wants to execute init.sh first
 if [ -d /etc/cryptsetup-keys.d ]; then
   echo "Do you want to execute init.sh first? [y/n]: "
@@ -111,6 +107,10 @@ source ./helpers/menu.sh
 
 # Call main to show menu and get user selections
 main
+
+# Set up trap to handle Ctrl+C properly (after menu.sh which has its own trap)
+trap 'echo -e "\n\nInterrupted by user. Exiting..."; exit 130' INT
+ABS_PATH=$(dirname "$(realpath "$0")")
 
 # Reconstruct OPTIONS array from exported variables
 declare -A OPTIONS
