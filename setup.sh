@@ -293,7 +293,7 @@ if [ "${OPTIONS[phpmyadmin]}" = "1" ]; then
   while true; do
     printf "\rset phpmyadmin database user password: \n"
     for i in {10..1}; do
-      printf "(auto-skip in %d seconds): "  "$i"
+      printf "\r(auto-skip in %d seconds): "  "$i"
       if read -t 1 -s -r PHPMYADMIN_SECRET 2>/dev/null; then
         if [[ "$PHPMYADMIN_SECRET" == $'\x1b' ]]; then
           read -t 0.1 -n 2 arrow 2>/dev/null
@@ -353,7 +353,7 @@ fi
 if [ "${OPTIONS[certbot]}" = "1" ]; then
   cert_bot_email_prompt(){
     while true; do
-      print "\rcertbot email: \n"
+      printf "\rcertbot email: \n"
       for i in {10..1}; do
         printf "\r(auto-skip in %d seconds): " "$i"
         if read -t 1 -r CERTBOT_EMAIL 2>/dev/null; then
