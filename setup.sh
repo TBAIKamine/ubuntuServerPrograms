@@ -778,11 +778,15 @@ if [ "${OPTIONS[pyenv_python]}" = "1" ]; then
       echo "export PYENV_ROOT=\"/home/user/.pyenv\"" >> /home/user/.bashrc
       [[ -d $PYENV_ROOT/bin ]] && echo "export PATH=\"$PYENV_ROOT/bin:\$PATH\"" >> /home/user/.bashrc
       hash -r #refresh environment
-      sudo -u user bash -c 'pyenv init - bash'
-      sudo -u user bash -c 'pyenv virtualenv-init -'
-      sudo -u user bash -c 'pyenv install 3.13'
-      sudo -u user bash -c 'pyenv global 3.13'
-    } >>./log 2>&1 &
+      sudo -u user bash -l -c '
+          export PYENV_ROOT="$HOME/.pyenv"
+          [[ -d $PYENV_ROOT/bin ]] && export PATH="$PYENV_ROOT/bin:$PATH"
+          eval "$(pyenv init - bash)"
+          eval "$(pyenv virtualenv-init -)"
+          pyenv install 3.13
+          pyenv global 3.13
+      '
+      } >>./log 2>&1 &
     bash ./helpers/progress.sh $!
     echo
   fi
