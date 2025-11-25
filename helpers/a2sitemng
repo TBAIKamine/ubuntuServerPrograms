@@ -99,6 +99,7 @@ handle_domain_purchase() {
 }
 
 usage() {
+    local exit_code="${1:-0}"
     cat << EOF
 Usage: $0 [OPTIONS] [FQDN] [REGISTRAR]
 
@@ -125,6 +126,7 @@ Examples:
     $0 -pp -d something.example.com -p 8080 -s -sn something.example.com
     $0 --swc -d subdomain.*
 EOF
+    exit "$exit_code"
 }
 
 # Initialize variables
@@ -205,11 +207,11 @@ while [[ $# -gt 0 ]]; do
             shift 2
             ;;
         -h|--help)
-            usage
+            usage 0
             ;;
         -*)
             echo "Unknown option $1"
-            usage
+            usage 1
             ;;
         *)
             # Positional arguments
@@ -217,7 +219,7 @@ while [[ $# -gt 0 ]]; do
                 FQDN="$1"
             else
                 echo "Too many arguments"
-                usage
+                usage 1
             fi
             shift
             ;;

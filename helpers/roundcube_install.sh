@@ -26,8 +26,11 @@ if grep -q "^\$config\['username_domain_forced'\]" "$RC_CONFIG_FILE"; then
 else
   echo "\$config['username_domain_forced'] = true;" >> "$RC_CONFIG_FILE"
 fi
+#TODO
 if [ -n "$FQDN" ]; then
-	a2sitemng -swc -d "mail.*"
+	a2sitemng --swc -d "mail.*"
 fi
-a2ensite mail.conf
+if [ -f /etc/apache2/sites-available/mail.conf ]; then
+  a2ensite mail.conf
+fi
 systemctl restart apache2

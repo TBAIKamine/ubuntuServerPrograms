@@ -773,15 +773,15 @@ if [ "${OPTIONS[pyenv_python]}" = "1" ]; then
       apt install make build-essential libssl-dev zlib1g-dev \
       libbz2-dev libreadline-dev libsqlite3-dev curl git \
       libncursesw5-dev xz-utils tk-dev libxml2-dev libxmlsec1-dev libffi-dev liblzma-dev -y
-      sudo -u user $(curl -fsSL https://pyenv.run | bash)
-      cat pyenv_profile.txt >> /home/user/.bashrc
-      sudo -u user $(PYENV_ROOT="/home/user/.pyenv")
-      [[ -d $PYENV_ROOT/bin ]] && sudo -u user $(PATH="$PYENV_ROOT/bin:$PATH")
-      hash -r
-      sudo -u user pyenv init - bash
-      sudo -u user pyenv virtualenv-init -
-      sudo -u user pyenv install 3.13
-      sudo -u user pyenv global 3.13
+      sudo -u user bash -c 'curl -fsSL https://pyenv.run | bash'
+      cat ./helpers/pyenv_profile.txt >> /home/user/.bashrc
+      echo "export PYENV_ROOT=\"/home/user/.pyenv\"" >> /home/user/.bashrc
+      [[ -d $PYENV_ROOT/bin ]] && echo "export PATH=\"$PYENV_ROOT/bin:\$PATH\"" >> /home/user/.bashrc
+      hash -r #refresh environment
+      sudo -u user bash -c 'pyenv init - bash'
+      sudo -u user bash -c 'pyenv virtualenv-init -'
+      sudo -u user bash -c 'pyenv install 3.13'
+      sudo -u user bash -c 'pyenv global 3.13'
     } >>./log 2>&1 &
     bash ./helpers/progress.sh $!
     echo
