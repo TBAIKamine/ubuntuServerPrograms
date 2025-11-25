@@ -392,6 +392,7 @@ if [ "${OPTIONS[certbot]}" = "1" ]; then
             exit 130
           fi
       done
+      echo
       read -r -p "certbot email is required when installing certbot: " CERTBOT_EMAIL
       if [ $? -ne 0 ]; then
         echo -e "\nCancelled. Skipping certbot email setup." >&2
