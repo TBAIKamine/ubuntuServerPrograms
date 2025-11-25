@@ -304,21 +304,27 @@ if [ "${OPTIONS[phpmyadmin]}" = "1" ]; then
           if [[ "$arrow" == "[A" || "$arrow" == "[B" || "$arrow" == "[C" || "$arrow" == "[D" ]]; then
             printf "\r\033[K"
             while true; do
-              read -n 1 -s userkey
+              IFS= read -s -r -p "" user_input
+              read_status=$?
+              echo
+              if [ $read_status -eq 130 ]; then
+                echo -e "\n\nInterrupted by user. Exiting..."
+                exit 130
+              fi
+              if [ $read_status -ne 0 ]; then
+                printf "\r\033[K"
+                continue
+              fi
+              if [[ "$user_input" == $'\x1b' ]]; then
+                read -t 0.1 -n 2 arrow2 2>/dev/null
                 if [ $? -eq 130 ]; then
                   echo -e "\n\nInterrupted by user. Exiting..."
                   exit 130
                 fi
-              if [[ "$userkey" == $'\x1b' ]]; then
-                read -t 0.1 -n 2 arrow2 2>/dev/null
-                  if [ $? -eq 130 ]; then
-                    echo -e "\n\nInterrupted by user. Exiting..."
-                    exit 130
-                  fi
                 printf "\r\033[K"
                 continue
               fi
-              PHPMYADMIN_SECRET="$userkey"
+              PHPMYADMIN_SECRET="$user_input"
               break
             done
           fi
