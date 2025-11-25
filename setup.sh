@@ -156,9 +156,9 @@ is_valid_fqdn() {
 # require user input.
 if [ "${OPTIONS[passwordless_sudoer]}" = "1" ]; then
   while true; do
-    printf "\rSet SUDO protection secret: \n" "$i"
+    printf "\rSet SUDO protection secret: \n"
     for i in {10..1}; do
-      printf "\r(auto-skip in %d seconds)"
+      printf "\r(auto-skip in %d seconds)" "$i"
       if read -t 1 -n 1 -s -r SUDO_SECRET 2>/dev/null; then
         if [[ "$SUDO_SECRET" == $'\x1b' ]]; then
           read -t 0.1 -n 2 arrow 2>/dev/null
@@ -291,9 +291,9 @@ fi
 # require user input.
 if [ "${OPTIONS[phpmyadmin]}" = "1" ]; then
   while true; do
-    printf "\rset phpmyadmin database user password: \n"  "$i"
+    printf "\rset phpmyadmin database user password: \n"
     for i in {10..1}; do
-      printf "(auto-skip in %d seconds): "
+      printf "(auto-skip in %d seconds): "  "$i"
       if read -t 1 -s -r PHPMYADMIN_SECRET 2>/dev/null; then
         if [[ "$PHPMYADMIN_SECRET" == $'\x1b' ]]; then
           read -t 0.1 -n 2 arrow 2>/dev/null
@@ -353,9 +353,9 @@ fi
 if [ "${OPTIONS[certbot]}" = "1" ]; then
   cert_bot_email_prompt(){
     while true; do
-      print "\rcertbot email: \n" "$i"
+      print "\rcertbot email: \n"
       for i in {10..1}; do
-        printf "\r(auto-skip in %d seconds): "
+        printf "\r(auto-skip in %d seconds): " "$i"
         if read -t 1 -r CERTBOT_EMAIL 2>/dev/null; then
           if [[ "$CERTBOT_EMAIL" == $'\x1b' ]]; then
             read -t 0.1 -n 2 arrow 2>/dev/null
@@ -467,11 +467,12 @@ fi
 if [ "${OPTIONS[docker_mailserver]}" = "1" ]; then
   SKIP_DMS=false
   while true; do  
+    printf "\rdocker mailserver requires a hostname at least, that or provide an email
+        1- hostname (FQDN)
+        2- email (recommended)
+        provide a number or c to cancel\n"
     for i in {10..1}; do
-      printf "\rdocker mailserver requires a hostname at least, that or provide an email
-      1- hostname (FQDN)
-      2- email (recommended)
-      provide a number or c to cancel (auto-cancels in %d seconds): " "$i"
+      printf "(\rauto-cancels in %d seconds): " "$i"
       if read -t 1 -r DMS_CHOICE 2>/dev/null; then
         if [[ "$DMS_CHOICE" == $'\x1b' ]]; then
           read -t 0.1 -n 2 arrow 2>/dev/null
