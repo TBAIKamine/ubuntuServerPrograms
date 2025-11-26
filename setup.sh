@@ -9,7 +9,6 @@ prompt_with_getinput() {
   local visibility_mode="${4-visible}"
   local require_confirm="${5-false}"
   local show_confirmation_text="${6-false}"
-  local require_non_empty="${7-false}"
   local raw result status
 
   raw=$(
@@ -17,7 +16,7 @@ prompt_with_getinput() {
     (
       # Source inside subshell to avoid leaking helper shell options into this script
       source "$ABS_PATH/helpers/getinput.sh"
-      getInput "$prompt_text" "$default_val" "$timeout_sec" "$visibility_mode" "$require_confirm" "$show_confirmation_text" "$require_non_empty"
+      getInput "$prompt_text" "$default_val" "$timeout_sec" "$visibility_mode" "$require_confirm" "$show_confirmation_text"
     )
   )
   status=$?
@@ -106,9 +105,10 @@ is_valid_fqdn() {
 
 # require user input.
 if [ "${OPTIONS[passwordless_sudoer]}" = "1" ]; then
-  SUDO_SECRET=$(prompt_with_getinput "Set SUDO protection secret" "" 10 "dotted" "true" "false" "true")
+  SUDO_SECRET=$(prompt_with_getinput "Set SUDO protection secret" "" 10 "dotted" "true")
   if [ -z "$SUDO_SECRET" ]; then
-    echo "Skipping SUDO secret setup." >&2
+    echo "Error: SUDO secret cannot be empty." >&2
+    echo "Skipping sudo secret setup automatically."
     unset SUDO_SECRET
   fi
 fi
@@ -123,16 +123,24 @@ if [ "${OPTIONS[webserver]}" = "1" ]; then
     fi
     if [ "$ADD_FQDN_NOW" = "y" ] || [ "$ADD_FQDN_NOW" = "Y" ]; then
       while true; do
-        FQDN=$(prompt_with_getinput "main FQDN" "" 10 "visible" "true" "true" "true")
+        FQDN=$(prompt_with_getinput "main FQDN" "" 10 "visible" "true" "true")
+        # Validate FQDN existence
         if [ -z "$FQDN" ]; then
-          echo "Skipping FQDN setup for now." >&2
-          break
+            echo "Error: FQDN can not be empty" >&2
+            read -r -p "changed your mind and want to skip for now? [y/n]: " SKIP_FQDN
+            if [ $? -ne 0 ] || [ "$SKIP_FQDN" = "y" ] || [ "$SKIP_FQDN" = "Y" ]; then
+              break
+            fi
+        else
+          if [[ ! "$FQDN" =~ ^[a-zA-Z0-9]([a-zA-Z0-9-]*[a-zA-Z0-9])?(\.[a-zA-Z0-9]([a-zA-Z0-9-]*[a-zA-Z0-9])?)*$ ]]; then
+              echo "Error: Invalid FQDN format: $FQDN" >&2
+              if [ "$SKIP_FQDN" = "y" ] || [ "$SKIP_FQDN" = "Y" ]; then
+                break
+              fi
+          else
+              break
+          fi
         fi
-        if [[ ! "$FQDN" =~ ^[a-zA-Z0-9]([a-zA-Z0-9-]*[a-zA-Z0-9])?(\.[a-zA-Z0-9]([a-zA-Z0-9-]*[a-zA-Z0-9])?)*$ ]]; then
-          echo "Error: Invalid FQDN format: $FQDN" >&2
-          continue
-        fi
-        break
       done
     fi
   fi
@@ -140,22 +148,38 @@ fi
 
 # require user input.
 if [ "${OPTIONS[phpmyadmin]}" = "1" ]; then
-  PHPMYADMIN_SECRET=$(prompt_with_getinput "Set phpMyAdmin database user password" "" 10 "dotted" "true" "false" "true")
-  if [ -z "$PHPMYADMIN_SECRET" ]; then
-    echo "Skipping phpMyAdmin secret setup." >&2
-    unset PHPMYADMIN_SECRET
-  fi
+  while true; do
+    PHPMYADMIN_SECRET=$(prompt_with_getinput "Set phpMyAdmin database user password" "" 10 "dotted" "true")
+    if [ -z "$PHPMYADMIN_SECRET" ]; then
+      echo "Error: phpMyAdmin secret cannot be empty." >&2
+      read -r -p "Skip phpMyAdmin secret setup? [y/n]: " SKIP_PHPMYADMIN_SECRET
+      if [ $? -ne 0 ] || [ "$SKIP_PHPMYADMIN_SECRET" = "y" ] || [ "$SKIP_PHPMYADMIN_SECRET" = "Y" ]; then
+        unset PHPMYADMIN_SECRET
+        break
+      fi
+      continue
+    else
+      break
+    fi
+  done
 fi
 
 # might require user input
 if [ "${OPTIONS[certbot]}" = "1" ]; then
   cert_bot_email_prompt(){
-    CERTBOT_EMAIL=$(prompt_with_getinput "certbot email (required when installing certbot)" "" 10 "visible" "false" "false" "true")
-    if [ -z "$CERTBOT_EMAIL" ]; then
-      unset CERTBOT_EMAIL
-      return 1
-    fi
-    return 0
+    while true; do
+      CERTBOT_EMAIL=$(prompt_with_getinput "certbot email (required when installing certbot)" "" 10)
+      if [ -z "$CERTBOT_EMAIL" ]; then
+        echo "Error: certbot email cannot be empty." >&2
+        read -r -p "Skip certbot email setup? [y/n]: " SKIP_CERTBOT_EMAIL
+        if [ $? -ne 0 ] || [ "$SKIP_CERTBOT_EMAIL" = "y" ] || [ "$SKIP_CERTBOT_EMAIL" = "Y" ]; then
+          unset CERTBOT_EMAIL
+          return 1
+        fi
+      else
+        return 0
+      fi
+    done
   }
   cert_bot_email_prompt
   email_prompt_result=$?
