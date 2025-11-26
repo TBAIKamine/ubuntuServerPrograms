@@ -15,7 +15,7 @@ collect_input_with_confirm(){
 
   while true; do
     if [ "$empty_allowed" != "true" ]; then
-      printf "\nNote: This value cannot be empty. Press ENTER to retry, or 's' to skip.\n" >&2
+      printf "Input cannot be empty. retry [ENTER] or skip [s]: " >&2
     fi
 
     first=$(read_line_with_visibility "$prompt_text" "$default_val" "$visibility_mode" "$initial_text" "$show_prompt" "$show_confirmation_text")
