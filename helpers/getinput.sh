@@ -2,6 +2,34 @@
 set -euo pipefail
 trap 'echo; echo "Interrupted by user. Exiting..."; exit 130' INT
 
+collect_input_with_confirm(){
+  local prompt_text="$1"
+  local default_val="$2"
+  local visibility_mode="$3"
+  local initial_text="${4-}"
+  local show_prompt="${5-true}"
+  local require_confirm="${6-false}"
+  local first second
+
+  while true; do
+    first=$(read_line_with_visibility "$prompt_text" "$default_val" "$visibility_mode" "$initial_text" "$show_prompt")
+    first="${first%$'\n'}"
+    if [ "$require_confirm" != "true" ]; then
+      printf "%s\n" "$first"
+      return 0
+    fi
+    second=$(read_line_with_visibility "Confirm $prompt_text" "$default_val" "$visibility_mode")
+    second="${second%$'\n'}"
+    if [ "$second" = "$first" ]; then
+      printf "%s\n" "$first"
+      return 0
+    fi
+    printf "Inputs do not match. Please try again.\n" >&2
+    initial_text=""
+    show_prompt="true"
+  done
+}
+
 show_confirmation(){
   local mode="$1"
   local final_value="$2"
@@ -105,6 +133,7 @@ getInput(){
   local default_val="${2-}"
   local timeout_sec="${3-10}"
   local visibility_mode="${4-visible}"
+  local confirm_required="${5-false}"
   local seconds header key rest input
   header="$prompt_text"
   [ -n "$default_val" ] && header+=" [$default_val]"
@@ -116,8 +145,8 @@ getInput(){
       case "$key" in
         $'\x03') printf "\n" >&2; exit 130 ;;
         $'\n'|$'\r'|$' ') printf "\r\033[K" >&2; show_confirmation "$visibility_mode" "$default_val" 0 true; printf "%s\n" "${default_val}"; return 0 ;;
-        $'\e') read -rsn2 -t 0.01 rest 2>/dev/null || true; printf "\r\033[K" >&2; read_line_with_visibility "$prompt_text" "$default_val" "$visibility_mode" "" "false"; return 0 ;;
-        *) printf "\r\033[K" >&2; read_line_with_visibility "$prompt_text" "$default_val" "$visibility_mode" "$key" "false"; return 0 ;;
+        $'\e') read -rsn2 -t 0.01 rest 2>/dev/null || true; printf "\r\033[K" >&2; collect_input_with_confirm "$prompt_text" "$default_val" "$visibility_mode" "" "false" "$confirm_required"; return 0 ;;
+        *) printf "\r\033[K" >&2; collect_input_with_confirm "$prompt_text" "$default_val" "$visibility_mode" "$key" "false" "$confirm_required"; return 0 ;;
       esac
     fi
     seconds=$((seconds - 1))
