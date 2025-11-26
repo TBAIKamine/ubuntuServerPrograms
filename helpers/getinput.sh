@@ -69,6 +69,77 @@ read_line_with_visibility(){
   local input="$initial"
   local ch rest
 
+
+prompt_retry_or_skip(){
+  local prompt_text="$1"
+  local choice
+
+  while true; do
+    printf "Input cannot be empty. Try again [enter] or skip [s]? " >&2
+    IFS= read -rsn1 choice 2>/dev/null || choice=""
+    case "$choice" in
+      $'\n'|$'\r'|'')
+        printf "\r\033[K" >&2
+        printf "\n" >&2
+        return 0  # retry
+        ;;
+      s|S)
+        printf "\r\033[KSkipping %s as requested.\n" "$prompt_text" >&2
+        return 1  # skip
+        ;;
+      *)
+        ;;
+    esac
+  done
+}
+
+collect_with_timeout(){
+  local prompt_text="$1"
+  local default_val="${2-}"
+  local timeout_sec="${3-10}"
+  local visibility_mode="${4-visible}"
+  local confirm_required="${5-false}"
+  local show_confirmation_text="${6-true}"
+  local seconds header key rest
+
+  header="$prompt_text"
+  [ -n "$default_val" ] && header+=" [$default_val]"
+  printf "%s\n" "$header" >&2
+  seconds=$((timeout_sec))
+  while [ $seconds -ge 0 ]; do
+    printf "\r\033[Kmoving on in %ds" "$seconds" >&2
+    if read -rsn1 -t 1 key 2>/dev/null; then
+      case "$key" in
+        $'\x03') printf "\n" >&2; exit 130 ;;
+        $'\n'|$'\r'|$' ')
+          printf "\r\033[K" >&2
+          if [ "$show_confirmation_text" = "true" ]; then
+            show_confirmation "$visibility_mode" "$default_val" 0 true
+          fi
+          printf "%s\n" "$default_val"
+          return 0
+          ;;
+        $'\e')
+          read -rsn2 -t 0.01 rest 2>/dev/null || true
+          printf "\r\033[K" >&2
+          collect_input_with_confirm "$prompt_text" "$default_val" "$visibility_mode" "" "false" "$confirm_required" "$show_confirmation_text"
+          return 0
+          ;;
+        *)
+          printf "\r\033[K" >&2
+          collect_input_with_confirm "$prompt_text" "$default_val" "$visibility_mode" "$key" "false" "$confirm_required" "$show_confirmation_text"
+          return 0
+          ;;
+      esac
+    fi
+    seconds=$((seconds - 1))
+  done
+  printf "\r\033[K" >&2
+  if [ "$show_confirmation_text" = "true" ]; then
+    show_confirmation "$visibility_mode" "$default_val" 0 true
+  fi
+  printf "%s\n" "$default_val"
+}
   if [ "$show_prompt" = "true" ]; then
     if [ -n "$default_val" ]; then
       printf "%s: [%s] " "$prompt_text" "$default_val" >&2
@@ -77,29 +148,31 @@ read_line_with_visibility(){
     fi
   fi
 
-  if [ -n "$initial" ]; then
-    if [ "$mode" = "dotted" ]; then
-      printf "%${#initial}s" "" | tr ' ' '*' >&2
-    else
-      printf "%s" "$initial" >&2
-    fi
-  fi
+  local require_non_empty="${7-false}"
+  local result force_direct_prompt="false"
 
   while true; do
-    IFS= read -rsN1 ch || true
-    case "$ch" in
-      $'\x03')
-        printf "\n" >&2
-        exit 130
-        ;;
-      $'\n'|$'\r')
-        local final_value used_default
-        local typed_len=${#input}
-        if [ -z "$input" ]; then
-          final_value="$default_val"
-          used_default="true"
-        else
-          final_value="$input"
+    if [ "$force_direct_prompt" = "true" ]; then
+      result=$(collect_input_with_confirm "$prompt_text" "$default_val" "$visibility_mode" "" "true" "$confirm_required" "$show_confirmation_text")
+    else
+      result=$(collect_with_timeout "$prompt_text" "$default_val" "$timeout_sec" "$visibility_mode" "$confirm_required" "$show_confirmation_text")
+    fi
+
+    result="${result%$'\n'}"
+
+    if [ "$require_non_empty" = "true" ] && [ -z "$result" ]; then
+      if prompt_retry_or_skip "$prompt_text"; then
+        force_direct_prompt="true"
+        continue
+      else
+        printf "%s\n" ""
+        return 0
+      fi
+    fi
+
+    printf "%s\n" "$result"
+    return 0
+  done
           used_default="false"
         fi
         printf "\r\033[K" >&2
@@ -145,25 +218,6 @@ getInput(){
   printf "%s\n" "$header" >&2
   seconds=$((timeout_sec))
   while [ $seconds -ge 0 ]; do
-prompt_retry_or_skip_for_empty_input(){
-  local choice
-  while true; do
-    printf "Input can't be empty, try again [Enter] or skip [s]? " >&2
-    IFS= read -rs choice || return 1
-    printf "\n" >&2
-    if [ -z "$choice" ]; then
-      return 1
-    fi
-    case "$choice" in
-      [sS])
-        return 0
-        ;;
-      *)
-        ;; # keep prompting until valid response
-    esac
-  done
-}
-
     printf "\r\033[Kmoving on in %ds" "$seconds" >&2
     if read -rsn1 -t 1 key 2>/dev/null; then
       case "$key" in
@@ -171,65 +225,13 @@ prompt_retry_or_skip_for_empty_input(){
         $'\n'|$'\r'|$' ') printf "\r\033[K" >&2; if [ "$show_confirmation_text" = "true" ]; then show_confirmation "$visibility_mode" "$default_val" 0 true; fi; printf "%s\n" "${default_val}"; return 0 ;;
         $'\e') read -rsn2 -t 0.01 rest 2>/dev/null || true; printf "\r\033[K" >&2; collect_input_with_confirm "$prompt_text" "$default_val" "$visibility_mode" "" "false" "$confirm_required" "$show_confirmation_text"; return 0 ;;
         *) printf "\r\033[K" >&2; collect_input_with_confirm "$prompt_text" "$default_val" "$visibility_mode" "$key" "false" "$confirm_required" "$show_confirmation_text"; return 0 ;;
-  local require_non_empty="${7-false}"
-  local seconds header key rest result handler_exit
-
-  header="$prompt_text"
-  [ -n "$default_val" ] && header+=" [$default_val]"
-
-  while true; do
-    printf "%s\n" "$header" >&2
-    seconds=$((timeout_sec))
-    result=""
-    handler_exit="false"
-    while [ $seconds -ge 0 ]; do
-      printf "\r\033[Kmoving on in %ds" "$seconds" >&2
-      if read -rsn1 -t 1 key 2>/dev/null; then
-        case "$key" in
-          $'\x03') printf "\n" >&2; exit 130 ;;
-          $'\n'|$'\r'|$' ')
-            printf "\r\033[K" >&2
-            if [ "$show_confirmation_text" = "true" ]; then
-              show_confirmation "$visibility_mode" "$default_val" 0 true
-            fi
-            result="$default_val"
-            handler_exit="true"
-            break
-            ;;
-          $'\e')
-            read -rsn2 -t 0.01 rest 2>/dev/null || true
-            printf "\r\033[K" >&2
-            result=$(collect_input_with_confirm "$prompt_text" "$default_val" "$visibility_mode" "" "false" "$confirm_required" "$show_confirmation_text")
-            handler_exit="true"
-            break
-            ;;
-          *)
-            printf "\r\033[K" >&2
-            result=$(collect_input_with_confirm "$prompt_text" "$default_val" "$visibility_mode" "$key" "false" "$confirm_required" "$show_confirmation_text")
-            handler_exit="true"
-            break
-            ;;
-        esac
-      fi
-      seconds=$((seconds - 1))
-    done
-
-    if [ "$handler_exit" != "true" ]; then
-      printf "\r\033[K" >&2
-      if [ "$show_confirmation_text" = "true" ]; then
-        show_confirmation "$visibility_mode" "$default_val" 0 true
-      fi
-      result="$default_val"
+      esac
     fi
-
-    if [ "$require_non_empty" = "true" ] && [ -z "$result" ]; then
-      if prompt_retry_or_skip_for_empty_input; then
-        printf "%s\n" ""
-        return 0
-      fi
-      continue
-    fi
-
-    printf "%s\n" "$result"
-    return 0
+    seconds=$((seconds - 1))
   done
+  printf "\r\033[K" >&2
+  if [ "$show_confirmation_text" = "true" ]; then
+    show_confirmation "$visibility_mode" "$default_val" 0 true
+  fi
+  printf "%s\n" "$default_val"
+}
