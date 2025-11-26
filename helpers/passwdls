@@ -1,4 +1,5 @@
 #!/bin/bash
+source getinput.sh
 SUDOERS_FILE="/etc/sudoers.d/secret_broker"
 
 # Check if argument is provided
@@ -25,6 +26,30 @@ case "$1" in
     else
       echo "Passwordless sudo already disabled"
     fi
+    ;;
+  update)
+    # Update the stored sudo secret hash. Use getInput to collect a
+    # confirmed, non-empty, dotted input and then store its sha256 hash.
+    echo "Updating sudo secret..." >&2
+    # Ask interactively; visibility=dotted, require confirmation, do not allow empty
+    NEW_SECRET=$(getInput "Enter new sudo secret" "" 0 "dotted" "true" "true" "false")
+    # If no value returned, abort
+    NEW_SECRET="${NEW_SECRET%$'\n'}"
+    if [ -z "${NEW_SECRET}" ]; then
+      echo "No secret entered. Aborting update." >&2
+      exit 1
+    fi
+
+    # Secure the hash file while updating
+    if [ -f /etc/sudo_secret.hash ]; then
+      chmod 700 /etc/sudo_secret.hash || true
+    fi
+    # Write new hash (use the mechanism provided)
+    echo -n "${NEW_SECRET}" | sha256sum | awk '{print $1}' | tee /etc/sudo_secret.hash > /dev/null
+    chmod 440 /etc/sudo_secret.hash
+    chown root:root /etc/sudo_secret.hash || true
+
+    echo "Sudo secret hash updated." >&2
     ;;
   *)
     echo "Invalid argument: $1"

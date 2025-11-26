@@ -323,7 +323,7 @@ print_status() {
 # the actual install logic.
 # everything below does not require user input, thus all will be installed in the order intended.
 if [ -n "$SUDO_SECRET" ]; then
-  if [ -x "/usr/local/bin/passwdless_sudoer.sh" ]; then
+  if [ -x "/usr/local/bin/passwdls" ]; then
     print_status "Passwordless sudoer already installed. Skipping... "
     echo
   else

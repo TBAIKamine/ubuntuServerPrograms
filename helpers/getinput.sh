@@ -175,6 +175,25 @@ getInput(){
   header="$prompt_text"
   [ -n "$default_val" ] && header+=" [$default_val]"
   printf "%s\n" "$header" >&2
+
+  # If timeout_sec is 0, wait indefinitely (no countdown display) for a key
+  # This preserves the existing key-driven behavior: Enter/Space -> accept
+  # default; Esc -> open full input; other key -> start input with that
+  # initial character. Other flags (confirm_required, show_confirmation_text,
+  # empty_allowed) are still honored via collect_input_with_confirm.
+  if [ "$timeout_sec" -eq 0 ]; then
+    while true; do
+      if read -rsn1 key 2>/dev/null; then
+        case "$key" in
+          $'\x03') printf "\n" >&2; exit 130 ;;
+          $'\n'|$'\r'|$' ') printf "\r\033[K" >&2; if [ "$show_confirmation_text" = "true" ]; then show_confirmation "$visibility_mode" "$default_val" 0 true; fi; printf "%s\n" "${default_val}"; return 0 ;;
+          $'\e') read -rsn2 -t 0.01 rest 2>/dev/null || true; printf "\r\033[K" >&2; collect_input_with_confirm "$prompt_text" "$default_val" "$visibility_mode" "" "false" "$confirm_required" "$show_confirmation_text" "$empty_allowed"; return 0 ;;
+          *) printf "\r\033[K" >&2; collect_input_with_confirm "$prompt_text" "$default_val" "$visibility_mode" "$key" "false" "$confirm_required" "$show_confirmation_text" "$empty_allowed"; return 0 ;;
+        esac
+      fi
+    done
+  fi
+
   seconds=$((timeout_sec))
   while [ $seconds -ge 0 ]; do
     printf "\r\033[Kmoving on in %ds" "$seconds" >&2
