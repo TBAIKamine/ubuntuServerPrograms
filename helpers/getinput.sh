@@ -9,16 +9,17 @@ collect_input_with_confirm(){
   local initial_text="${4-}"
   local show_prompt="${5-true}"
   local require_confirm="${6-false}"
+  local show_confirmation_text="${7-false}"
   local first second
 
   while true; do
-    first=$(read_line_with_visibility "$prompt_text" "$default_val" "$visibility_mode" "$initial_text" "$show_prompt")
+    first=$(read_line_with_visibility "$prompt_text" "$default_val" "$visibility_mode" "$initial_text" "$show_prompt" "$show_confirmation_text")
     first="${first%$'\n'}"
     if [ "$require_confirm" != "true" ]; then
       printf "%s\n" "$first"
       return 0
     fi
-    second=$(read_line_with_visibility "Confirm $prompt_text" "$default_val" "$visibility_mode")
+    second=$(read_line_with_visibility "Confirm $prompt_text" "$default_val" "$visibility_mode" "" "true" "$show_confirmation_text")
     second="${second%$'\n'}"
     if [ "$second" = "$first" ]; then
       printf "%s\n" "$first"
@@ -52,7 +53,7 @@ show_confirmation(){
       confirmation="Input taken"
     fi
   else
-    confirmation="$final_value"
+    confirmation="Input taken: $final_value"
   fi
 
   printf "%s\n" "$confirmation" >&2
@@ -64,6 +65,7 @@ read_line_with_visibility(){
   local mode="${3-visible}"
   local initial="${4-}"
   local show_prompt="${5-true}"
+  local show_confirmation_text="${6-false}"
   local input="$initial"
   local ch rest
 
@@ -100,8 +102,10 @@ read_line_with_visibility(){
           final_value="$input"
           used_default="false"
         fi
-        printf "\n" >&2
-        show_confirmation "$mode" "$final_value" "$typed_len" "$used_default"
+        printf "\r\033[K" >&2
+        if [ "$show_confirmation_text" = "true" ]; then
+          show_confirmation "$mode" "$final_value" "$typed_len" "$used_default"
+        fi
         printf "%s\n" "$final_value"
         return 0
         ;;
@@ -134,6 +138,7 @@ getInput(){
   local timeout_sec="${3-10}"
   local visibility_mode="${4-visible}"
   local confirm_required="${5-false}"
+  local show_confirmation_text="${6-false}"
   local seconds header key rest input
   header="$prompt_text"
   [ -n "$default_val" ] && header+=" [$default_val]"
@@ -144,14 +149,16 @@ getInput(){
     if read -rsn1 -t 1 key 2>/dev/null; then
       case "$key" in
         $'\x03') printf "\n" >&2; exit 130 ;;
-        $'\n'|$'\r'|$' ') printf "\r\033[K" >&2; show_confirmation "$visibility_mode" "$default_val" 0 true; printf "%s\n" "${default_val}"; return 0 ;;
-        $'\e') read -rsn2 -t 0.01 rest 2>/dev/null || true; printf "\r\033[K" >&2; collect_input_with_confirm "$prompt_text" "$default_val" "$visibility_mode" "" "false" "$confirm_required"; return 0 ;;
-        *) printf "\r\033[K" >&2; collect_input_with_confirm "$prompt_text" "$default_val" "$visibility_mode" "$key" "false" "$confirm_required"; return 0 ;;
+        $'\n'|$'\r'|$' ') printf "\r\033[K" >&2; if [ "$show_confirmation_text" = "true" ]; then show_confirmation "$visibility_mode" "$default_val" 0 true; fi; printf "%s\n" "${default_val}"; return 0 ;;
+        $'\e') read -rsn2 -t 0.01 rest 2>/dev/null || true; printf "\r\033[K" >&2; collect_input_with_confirm "$prompt_text" "$default_val" "$visibility_mode" "" "false" "$confirm_required" "$show_confirmation_text"; return 0 ;;
+        *) printf "\r\033[K" >&2; collect_input_with_confirm "$prompt_text" "$default_val" "$visibility_mode" "$key" "false" "$confirm_required" "$show_confirmation_text"; return 0 ;;
       esac
     fi
     seconds=$((seconds - 1))
   done
   printf "\r\033[K" >&2
-  show_confirmation "$visibility_mode" "$default_val" 0 true
+  if [ "$show_confirmation_text" = "true" ]; then
+    show_confirmation "$visibility_mode" "$default_val" 0 true
+  fi
   printf "%s\n" "$default_val"
 }

@@ -8,6 +8,7 @@ prompt_with_getinput() {
   local timeout_sec="${3-10}"
   local visibility_mode="${4-visible}"
   local require_confirm="${5-false}"
+  local show_confirmation_text="${6-false}"
   local raw result status
 
   raw=$(
@@ -15,7 +16,7 @@ prompt_with_getinput() {
     (
       # Source inside subshell to avoid leaking helper shell options into this script
       source "$ABS_PATH/helpers/getinput.sh"
-      getInput "$prompt_text" "$default_val" "$timeout_sec" "$visibility_mode" "$require_confirm"
+      getInput "$prompt_text" "$default_val" "$timeout_sec" "$visibility_mode" "$require_confirm" "$show_confirmation_text"
     )
   )
   status=$?
