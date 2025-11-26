@@ -222,55 +222,140 @@ toggle_option() {
 }
 
 # Fancy menu with proper box drawing
-draw_fancy_menu() {
+# Full initial draw for fancy menu. After this we will update only changed lines
+draw_fancy_menu_full() {
     update_dependencies
     clear
-    
+
+    # top header
     echo "╔══════════════════════════════════════════════════════════════════════════════════════════════╗"
     echo "║                            Ubuntu Server OS Provisioning Setup                               ║"
     echo "╠══════════════════════════════════════════════════════════════════════════════════════════════╣"
-    
+
+    # countdown line (row 3, 0-based)
     if [ "$TIMER_ACTIVE" -eq 1 ]; then
         printf "║ Auto-continue in: %2d seconds | Use ↑↓ arrows, SPACE to toggle, ENTER to continue, Q to quit  ║\n" "$COUNTDOWN"
     else
         echo "║ Use ↑↓ arrows to navigate, SPACE to toggle, ENTER to continue, Q to quit                    ║"
     fi
-    
+
     echo "╠══════════════════════════════════════════════════════════════════════════════════════════════╣"
     echo "║ Note: Grayed options are auto-selected due to dependencies                                   ║"
     echo "╠══════════════════════════════════════════════════════════════════════════════════════════════╣"
-    
+
+    # Record where options start (0-based). We know we've printed 7 lines before options start.
+    COUNTDOWN_ROW=3
+    OPTION_START_ROW=7
+
     local index=0
+    # Prepare an array of rendered option lines so we can do targeted updates later
+    PREV_OPTION_LINES=()
     for key in "${OPTION_KEYS[@]}"; do
         local status="[ ]"
         local marker="   "
         local description="${DESCRIPTIONS[$key]}"
-        
+
         if [ "${OPTIONS[$key]}" = "1" ]; then
             status="[✓]"
         fi
-        
+
         if [ "$index" -eq "$CURRENT_SELECTION" ]; then
             marker="►  "
         fi
-        
-        # Build the line differently based on whether option is forced
+
+        local line=""
         if is_option_forced "$key"; then
             status="[✓]"
-            # For grayed options, manually calculate padding (total width should be 84 chars)
+            # For grayed options, keep color codes in the stored line so updates match
             local desc_len=${#description}
             local padding=$((84 - desc_len))
             local spaces=$(printf '%*s' "$padding" '')
-            printf "║ %s %s %s%s%s%s ║\n" "$marker" "$status" "$GRAY" "$description" "$RESET" "$spaces"
+            line=$(printf "║ %s %s %s%s%s%s ║" "$marker" "$status" "$GRAY" "$description" "$RESET" "$spaces")
         else
-            # Normal display without color codes (84 chars for description area)
-            printf "║ %s %s %-84s ║\n" "$marker" "$status" "$description"
+            line=$(printf "║ %s %s %-84s ║" "$marker" "$status" "$description")
         fi
-        
+
+        PREV_OPTION_LINES[$index]="$line"
+        echo "$line"
         ((index++))
     done
-    
+
     echo "╚══════════════════════════════════════════════════════════════════════════════════════════════╝"
+
+    # Also compute full width line length for padding when updating
+    MENU_LINE_WIDTH=${#PREV_OPTION_LINES[0]}
+}
+
+# Helper: update only the countdown line (does a single cursor move and overwrite)
+update_countdown_line() {
+    tput sc
+    tput cup "$COUNTDOWN_ROW" 0
+    if [ "$TIMER_ACTIVE" -eq 1 ]; then
+        printf "║ Auto-continue in: %2d seconds | Use ↑↓ arrows, SPACE to toggle, ENTER to continue, Q to quit  ║" "$COUNTDOWN"
+    else
+        printf "║ Use ↑↓ arrows to navigate, SPACE to toggle, ENTER to continue, Q to quit                    ║"
+    fi
+    # Clear to end of line in case new content is shorter
+    printf "\e[K"
+    tput rc
+}
+
+# Helper: render a single option line for index and return it
+render_option_line() {
+    local idx=$1
+    local key="${OPTION_KEYS[$idx]}"
+    local status="[ ]"
+    local marker="   "
+    local description="${DESCRIPTIONS[$key]}"
+
+    if [ "${OPTIONS[$key]}" = "1" ]; then
+        status="[✓]"
+    fi
+
+    if [ "$idx" -eq "$CURRENT_SELECTION" ]; then
+        marker="►  "
+    fi
+
+    local line
+    if is_option_forced "$key"; then
+        status="[✓]"
+        local desc_len=${#description}
+        local padding=$((84 - desc_len))
+        local spaces=$(printf '%*s' "$padding" '')
+        line=$(printf "║ %s %s %s%s%s%s ║" "$marker" "$status" "$GRAY" "$description" "$RESET" "$spaces")
+    else
+        line=$(printf "║ %s %s %-84s ║" "$marker" "$status" "$description")
+    fi
+
+    printf "%s" "$line"
+}
+
+# Helper: overwrite a single option line at given index
+update_option_line() {
+    local idx=$1
+    local row=$((OPTION_START_ROW + idx))
+    tput sc
+    tput cup "$row" 0
+    local new_line
+    new_line=$(render_option_line "$idx")
+    # Print and clear rest of line if necessary
+    printf "%s" "$new_line"
+    printf "\e[K"
+    tput rc
+    PREV_OPTION_LINES[$idx]="$new_line"
+}
+
+# Helper: update any option lines that changed after dependencies/toggles
+redraw_changed_option_lines() {
+    local idx=0
+    for key in "${OPTION_KEYS[@]}"; do
+        local new_line
+        new_line=$(render_option_line "$idx")
+        if [ "${PREV_OPTION_LINES[$idx]}" != "$new_line" ]; then
+            update_option_line "$idx"
+        fi
+        ((idx++))
+    done
 }
 
 # Simple menu fallback
@@ -348,7 +433,8 @@ handle_fancy_input() {
                 32)  # Space key
                     current_key="${OPTION_KEYS[$CURRENT_SELECTION]}"
                     if toggle_option "$current_key"; then
-                        draw_fancy_menu
+                        # Update only affected option lines (the current one and any dependency-driven changes)
+                        redraw_changed_option_lines
                     else
                         # Visual feedback for forced options
                         clear
@@ -360,7 +446,7 @@ handle_fancy_input() {
                         echo "║ Press any key to continue..."
                         echo "╚═══════════════════════════════════════════════════════════════════════════════════════════════╝"
                         read -r -n1 -t5 2>/dev/null  # Wait for any key with timeout
-                        draw_fancy_menu
+                        draw_fancy_menu_full
                     fi
                     ;;
                 27)  # Escape - check for arrow keys
@@ -368,18 +454,23 @@ handle_fancy_input() {
                     if read -r -n2 -t0.1 seq 2>/dev/null; then
                         case "$seq" in
                             "[A")  # Up arrow
+                                prev_selection=$CURRENT_SELECTION
                                 ((CURRENT_SELECTION--))
                                 if [ "$CURRENT_SELECTION" -lt 0 ]; then
                                     CURRENT_SELECTION=$((${#OPTION_KEYS[@]} - 1))
                                 fi
-                                draw_fancy_menu
+                                # Update only the two affected lines (previous and current selection)
+                                update_option_line "$prev_selection"
+                                update_option_line "$CURRENT_SELECTION"
                                 ;;
                             "[B")  # Down arrow
+                                prev_selection=$CURRENT_SELECTION
                                 ((CURRENT_SELECTION++))
                                 if [ "$CURRENT_SELECTION" -ge "${#OPTION_KEYS[@]}" ]; then
                                     CURRENT_SELECTION=0
                                 fi
-                                draw_fancy_menu
+                                update_option_line "$prev_selection"
+                                update_option_line "$CURRENT_SELECTION"
                                 ;;
                         esac
                     fi
@@ -402,14 +493,14 @@ handle_fancy_input() {
                     if [ "$COUNTDOWN" -le 0 ]; then
                         break
                     fi
-                    draw_fancy_menu
+                    update_countdown_line
                 fi
             else
                 # Check for idle timeout when timer is not active
                 check_idle_timeout
                 if [ "$TIMER_ACTIVE" -eq 1 ]; then
                     last_countdown_update=$current_time
-                    draw_fancy_menu
+                    draw_fancy_menu_full
                 fi
             fi
         fi
@@ -470,7 +561,7 @@ main() {
     if [ "$USE_FANCY" -eq 1 ]; then
         echo "Using enhanced interface..."
         sleep 0.5
-        draw_fancy_menu
+        draw_fancy_menu_full
         if ! handle_fancy_input; then
             echo -e "\nFalling back to simple interface..."
             sleep 1
