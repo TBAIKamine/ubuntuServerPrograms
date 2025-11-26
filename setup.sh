@@ -15,7 +15,7 @@ prompt_with_getinput() {
       # Source inside subshell to avoid leaking helper shell options into this script
       source "$ABS_PATH/helpers/getinput.sh"
       getInput "$prompt_text" "$default_val" "$timeout_sec" "$visibility_mode"
-    ) | tee /dev/tty
+    )
   )
   status=$?
   if [ $status -ne 0 ]; then

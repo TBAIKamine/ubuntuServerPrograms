@@ -2,6 +2,32 @@
 set -euo pipefail
 trap 'echo; echo "Interrupted by user. Exiting..."; exit 130' INT
 
+show_confirmation(){
+  local mode="$1"
+  local final_value="$2"
+  local typed_len="${3-0}"
+  local used_default="${4-false}"
+  local confirmation
+
+  if [ "$mode" = "dotted" ]; then
+    if [ "$used_default" = "true" ]; then
+      if [ -n "$final_value" ]; then
+        confirmation="[default applied]"
+      else
+        confirmation="Input taken"
+      fi
+    elif [ "$typed_len" -gt 0 ]; then
+      confirmation=$(printf "%${typed_len}s" "" | tr ' ' '*')
+    else
+      confirmation="Input taken"
+    fi
+  else
+    confirmation="$final_value"
+  fi
+
+  printf "%s\n" "$confirmation" >&2
+}
+
 read_line_with_visibility(){
   local prompt_text="$1"
   local default_val="$2"
@@ -13,17 +39,17 @@ read_line_with_visibility(){
 
   if [ "$show_prompt" = "true" ]; then
     if [ -n "$default_val" ]; then
-      printf "%s: [%s] " "$prompt_text" "$default_val"
+      printf "%s: [%s] " "$prompt_text" "$default_val" >&2
     else
-      printf "%s: " "$prompt_text"
+      printf "%s: " "$prompt_text" >&2
     fi
   fi
 
   if [ -n "$initial" ]; then
     if [ "$mode" = "dotted" ]; then
-      printf "%${#initial}s" "" | tr ' ' '*'
+      printf "%${#initial}s" "" | tr ' ' '*' >&2
     else
-      printf "%s" "$initial"
+      printf "%s" "$initial" >&2
     fi
   fi
 
@@ -31,24 +57,28 @@ read_line_with_visibility(){
     IFS= read -rsN1 ch || true
     case "$ch" in
       $'\x03')
-        printf "\n"
+        printf "\n" >&2
         exit 130
         ;;
       $'\n'|$'\r')
-        printf "\n"
+        local final_value used_default
+        local typed_len=${#input}
         if [ -z "$input" ]; then
-          printf "%s\n" "$default_val"
-          echo "$default_val"
+          final_value="$default_val"
+          used_default="true"
         else
-          printf "%s\n" "$input"
-          echo "$input"
+          final_value="$input"
+          used_default="false"
         fi
+        printf "\n" >&2
+        show_confirmation "$mode" "$final_value" "$typed_len" "$used_default"
+        printf "%s\n" "$final_value"
         return 0
         ;;
       $'\x7f'|$'\b')
         if [ -n "$input" ]; then
           input=${input%?}
-          printf "\b \b"
+          printf "\b \b" >&2
         fi
         ;;
       $'\e')
@@ -59,9 +89,9 @@ read_line_with_visibility(){
       *)
         input+="$ch"
         if [ "$mode" = "dotted" ]; then
-          printf "*"
+          printf "*" >&2
         else
-          printf "%s" "$ch"
+          printf "%s" "$ch" >&2
         fi
         ;;
     esac
@@ -76,21 +106,21 @@ getInput(){
   local seconds header key rest input
   header="$prompt_text"
   [ -n "$default_val" ] && header+=" [$default_val]"
-  printf "%s\n" "$header"
+  printf "%s\n" "$header" >&2
   seconds=$((timeout_sec))
   while [ $seconds -ge 0 ]; do
-    printf "\r\033[Kmoving on in %ds" "$seconds"
+    printf "\r\033[Kmoving on in %ds" "$seconds" >&2
     if read -rsn1 -t 1 key 2>/dev/null; then
       case "$key" in
-        $'\x03') printf "\n"; exit 130 ;;
-        $'\n'|$'\r'|$' ') printf "\r\033[K"; printf "%s\n" "${default_val}"; echo "${default_val}"; return 0 ;;
-        $'\e') read -rsn2 -t 0.01 rest 2>/dev/null || true; printf "\r\033[K"; read_line_with_visibility "$prompt_text" "$default_val" "$visibility_mode" "" "false"; return 0 ;;
-        *) printf "\r\033[K"; read_line_with_visibility "$prompt_text" "$default_val" "$visibility_mode" "$key" "false"; return 0 ;;
+        $'\x03') printf "\n" >&2; exit 130 ;;
+        $'\n'|$'\r'|$' ') printf "\r\033[K" >&2; show_confirmation "$visibility_mode" "$default_val" 0 true; printf "%s\n" "${default_val}"; return 0 ;;
+        $'\e') read -rsn2 -t 0.01 rest 2>/dev/null || true; printf "\r\033[K" >&2; read_line_with_visibility "$prompt_text" "$default_val" "$visibility_mode" "" "false"; return 0 ;;
+        *) printf "\r\033[K" >&2; read_line_with_visibility "$prompt_text" "$default_val" "$visibility_mode" "$key" "false"; return 0 ;;
       esac
     fi
     seconds=$((seconds - 1))
   done
-  printf "\r\033[K"
+  printf "\r\033[K" >&2
+  show_confirmation "$visibility_mode" "$default_val" 0 true
   printf "%s\n" "$default_val"
-  echo "$default_val"
 }
