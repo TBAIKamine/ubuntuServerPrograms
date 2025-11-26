@@ -14,10 +14,6 @@ collect_input_with_confirm(){
   local first second
 
   while true; do
-    if [ "$empty_allowed" != "true" ]; then
-      printf "Input cannot be empty. retry [ENTER] or skip [s]: " >&2
-    fi
-
     first=$(read_line_with_visibility "$prompt_text" "$default_val" "$visibility_mode" "$initial_text" "$show_prompt" "$show_confirmation_text")
     first="${first%$'\n'}"
 
