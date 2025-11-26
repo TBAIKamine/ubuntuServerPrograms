@@ -17,7 +17,9 @@ show_confirmation(){
         confirmation="Input taken"
       fi
     elif [ "$typed_len" -gt 0 ]; then
-      confirmation=$(printf "%${typed_len}s" "" | tr ' ' '*')
+      local dots
+      dots=$(printf "%${typed_len}s" "" | tr ' ' '*')
+      confirmation="Input taken: ${dots}"
     else
       confirmation="Input taken"
     fi
