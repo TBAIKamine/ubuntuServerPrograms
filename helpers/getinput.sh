@@ -9,7 +9,7 @@ collect_input_with_confirm(){
   local initial_text="${4-}"
   local show_prompt="${5-true}"
   local require_confirm="${6-false}"
-  local show_confirmation_text="${7-false}"
+  local show_confirmation_text="${7-true}"
   local first second
 
   while true; do
@@ -65,7 +65,7 @@ read_line_with_visibility(){
   local mode="${3-visible}"
   local initial="${4-}"
   local show_prompt="${5-true}"
-  local show_confirmation_text="${6-false}"
+  local show_confirmation_text="${6-true}"
   local input="$initial"
   local ch rest
 
@@ -138,13 +138,32 @@ getInput(){
   local timeout_sec="${3-10}"
   local visibility_mode="${4-visible}"
   local confirm_required="${5-false}"
-  local show_confirmation_text="${6-false}"
+  local show_confirmation_text="${6-true}"
   local seconds header key rest input
   header="$prompt_text"
   [ -n "$default_val" ] && header+=" [$default_val]"
   printf "%s\n" "$header" >&2
   seconds=$((timeout_sec))
   while [ $seconds -ge 0 ]; do
+prompt_retry_or_skip_for_empty_input(){
+  local choice
+  while true; do
+    printf "Input can't be empty, try again [Enter] or skip [s]? " >&2
+    IFS= read -rs choice || return 1
+    printf "\n" >&2
+    if [ -z "$choice" ]; then
+      return 1
+    fi
+    case "$choice" in
+      [sS])
+        return 0
+        ;;
+      *)
+        ;; # keep prompting until valid response
+    esac
+  done
+}
+
     printf "\r\033[Kmoving on in %ds" "$seconds" >&2
     if read -rsn1 -t 1 key 2>/dev/null; then
       case "$key" in
@@ -152,13 +171,65 @@ getInput(){
         $'\n'|$'\r'|$' ') printf "\r\033[K" >&2; if [ "$show_confirmation_text" = "true" ]; then show_confirmation "$visibility_mode" "$default_val" 0 true; fi; printf "%s\n" "${default_val}"; return 0 ;;
         $'\e') read -rsn2 -t 0.01 rest 2>/dev/null || true; printf "\r\033[K" >&2; collect_input_with_confirm "$prompt_text" "$default_val" "$visibility_mode" "" "false" "$confirm_required" "$show_confirmation_text"; return 0 ;;
         *) printf "\r\033[K" >&2; collect_input_with_confirm "$prompt_text" "$default_val" "$visibility_mode" "$key" "false" "$confirm_required" "$show_confirmation_text"; return 0 ;;
-      esac
+  local require_non_empty="${7-false}"
+  local seconds header key rest result handler_exit
+
+  header="$prompt_text"
+  [ -n "$default_val" ] && header+=" [$default_val]"
+
+  while true; do
+    printf "%s\n" "$header" >&2
+    seconds=$((timeout_sec))
+    result=""
+    handler_exit="false"
+    while [ $seconds -ge 0 ]; do
+      printf "\r\033[Kmoving on in %ds" "$seconds" >&2
+      if read -rsn1 -t 1 key 2>/dev/null; then
+        case "$key" in
+          $'\x03') printf "\n" >&2; exit 130 ;;
+          $'\n'|$'\r'|$' ')
+            printf "\r\033[K" >&2
+            if [ "$show_confirmation_text" = "true" ]; then
+              show_confirmation "$visibility_mode" "$default_val" 0 true
+            fi
+            result="$default_val"
+            handler_exit="true"
+            break
+            ;;
+          $'\e')
+            read -rsn2 -t 0.01 rest 2>/dev/null || true
+            printf "\r\033[K" >&2
+            result=$(collect_input_with_confirm "$prompt_text" "$default_val" "$visibility_mode" "" "false" "$confirm_required" "$show_confirmation_text")
+            handler_exit="true"
+            break
+            ;;
+          *)
+            printf "\r\033[K" >&2
+            result=$(collect_input_with_confirm "$prompt_text" "$default_val" "$visibility_mode" "$key" "false" "$confirm_required" "$show_confirmation_text")
+            handler_exit="true"
+            break
+            ;;
+        esac
+      fi
+      seconds=$((seconds - 1))
+    done
+
+    if [ "$handler_exit" != "true" ]; then
+      printf "\r\033[K" >&2
+      if [ "$show_confirmation_text" = "true" ]; then
+        show_confirmation "$visibility_mode" "$default_val" 0 true
+      fi
+      result="$default_val"
     fi
-    seconds=$((seconds - 1))
+
+    if [ "$require_non_empty" = "true" ] && [ -z "$result" ]; then
+      if prompt_retry_or_skip_for_empty_input; then
+        printf "%s\n" ""
+        return 0
+      fi
+      continue
+    fi
+
+    printf "%s\n" "$result"
+    return 0
   done
-  printf "\r\033[K" >&2
-  if [ "$show_confirmation_text" = "true" ]; then
-    show_confirmation "$visibility_mode" "$default_val" 0 true
-  fi
-  printf "%s\n" "$default_val"
-}

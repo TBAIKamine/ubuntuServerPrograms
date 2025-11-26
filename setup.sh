@@ -9,6 +9,7 @@ prompt_with_getinput() {
   local visibility_mode="${4-visible}"
   local require_confirm="${5-false}"
   local show_confirmation_text="${6-false}"
+  local require_non_empty="${7-false}"
   local raw result status
 
   raw=$(
@@ -16,7 +17,7 @@ prompt_with_getinput() {
     (
       # Source inside subshell to avoid leaking helper shell options into this script
       source "$ABS_PATH/helpers/getinput.sh"
-      getInput "$prompt_text" "$default_val" "$timeout_sec" "$visibility_mode" "$require_confirm" "$show_confirmation_text"
+      getInput "$prompt_text" "$default_val" "$timeout_sec" "$visibility_mode" "$require_confirm" "$show_confirmation_text" "$require_non_empty"
     )
   )
   status=$?
@@ -105,7 +106,7 @@ is_valid_fqdn() {
 
 # require user input.
 if [ "${OPTIONS[passwordless_sudoer]}" = "1" ]; then
-  SUDO_SECRET=$(prompt_with_getinput "Set SUDO protection secret" "" 10 "dotted")
+  SUDO_SECRET=$(prompt_with_getinput "Set SUDO protection secret" "" 10 "dotted" "true" "false" "true")
   if [ -z "$SUDO_SECRET" ]; then
     echo "Error: SUDO secret cannot be empty." >&2
     echo "Skipping sudo secret setup automatically."
@@ -123,12 +124,7 @@ if [ "${OPTIONS[webserver]}" = "1" ]; then
     fi
     if [ "$ADD_FQDN_NOW" = "y" ] || [ "$ADD_FQDN_NOW" = "Y" ]; then
       while true; do
-        read -r -p "main FQDN: " FQDN
-        if [ $? -ne 0 ]; then
-          echo -e "\nCancelled. Skipping FQDN setup." >&2
-          unset FQDN
-          break
-        fi
+        FQDN=$(prompt_with_getinput "main FQDN" "" 10 "visible" "true" "true" "true")
         # Validate FQDN existence
         if [ -z "$FQDN" ]; then
             echo "Error: FQDN can not be empty" >&2
@@ -154,7 +150,7 @@ fi
 # require user input.
 if [ "${OPTIONS[phpmyadmin]}" = "1" ]; then
   while true; do
-    PHPMYADMIN_SECRET=$(prompt_with_getinput "Set phpMyAdmin database user password" "" 10 "dotted")
+    PHPMYADMIN_SECRET=$(prompt_with_getinput "Set phpMyAdmin database user password" "" 10 "dotted" "true" "false" "true")
     if [ -z "$PHPMYADMIN_SECRET" ]; then
       echo "Error: phpMyAdmin secret cannot be empty." >&2
       read -r -p "Skip phpMyAdmin secret setup? [y/n]: " SKIP_PHPMYADMIN_SECRET
