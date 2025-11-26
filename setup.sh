@@ -1,116 +1,64 @@
 #!/bin/bash
+
+ABS_PATH=$(dirname "$(realpath "$0")")
+
+prompt_with_getinput() {
+  local prompt_text="$1"
+  local default_val="${2-}"
+  local timeout_sec="${3-10}"
+  local visibility_mode="${4-visible}"
+  local raw result status
+
+  raw=$(
+    set -o pipefail
+    (
+      # Source inside subshell to avoid leaking helper shell options into this script
+      source "$ABS_PATH/helpers/getinput.sh"
+      getInput "$prompt_text" "$default_val" "$timeout_sec" "$visibility_mode"
+    ) | tee /dev/tty
+  )
+  status=$?
+  if [ $status -ne 0 ]; then
+    exit $status
+  fi
+
+  result=$(printf "%s\n" "$raw" | tail -n1)
+  result="${result//$'\r'/}"
+  printf "%s" "$result"
+}
+
 # ask if wants to execute init.sh first
 if [ -d /etc/cryptsetup-keys.d ]; then
   echo "Do you want to execute init.sh first? [y/n]: "
   echo "it is extremely important and even essential for security however
   you only need to run this once for the first time when you install ubuntu server."
-  for i in {5..1}; do
-    printf "\r(auto-selects 'y' in %d seconds): " "$i"
-    if read -t 1 -n 1 -r EXECUTE_INIT 2>/dev/null; then
-      if [[ "$EXECUTE_INIT" == $'\x1b' ]]; then
-        read -t 0.1 -n 2 arrow 2>/dev/null
-        if [[ "$arrow" == "[A" || "$arrow" == "[B" || "$arrow" == "[C" || "$arrow" == "[D" ]]; then
-          printf "\r\033[K"
-          while true; do
-            read -n 1 userkey
-              if [ $? -eq 130 ]; then
-                echo -e "\n\nInterrupted by user. Exiting..."
-                exit 130
-              fi
-            if [[ "$userkey" == $'\x1b' ]]; then
-              read -t 0.1 -n 2 arrow2 2>/dev/null
-                if [ $? -eq 130 ]; then
-                  echo -e "\n\nInterrupted by user. Exiting..."
-                  exit 130
-                fi
-              printf "\r\033[K"
-              continue
-            fi
-            EXECUTE_INIT="$userkey"
-            break
-          done
-        fi
-      fi
-      break
-    fi
-      if [ $? -eq 130 ]; then
-        echo -e "\n\nInterrupted by user. Exiting..."
-        exit 130
-      fi
-  done
+  EXECUTE_INIT=$(prompt_with_getinput "Run init.sh now? [y/n]" "y" 5)
   if [ -z "$EXECUTE_INIT" ]; then
     EXECUTE_INIT="y"
   fi
   if [[ "$EXECUTE_INIT" =~ ^[Yy]$ ]]; then
-      ./init.sh
-        # Add countdown before showing menu
-        COUNTDOWN=10
-        PAUSE=0
-        printf "\rContinue to tools install menu? [y/n] \n"
-        while [ $COUNTDOWN -gt 0 ]; do
-          printf "\r(auto-selects 'y' in %d seconds): " "$COUNTDOWN"
-          read -t 1 -n 1 -r USER_CONT 2>/dev/null
-          if [ $? -eq 130 ]; then
-            echo -e "\n\nInterrupted by user. Exiting..."
-            exit 130
-          fi
-          if [ $? -eq 0 ]; then
-            if [[ "$USER_CONT" == $'\x1b' ]]; then
-              read -t 0.1 -n 2 arrow 2>/dev/null
-              if [ $? -eq 130 ]; then
-                echo -e "\n\nInterrupted by user. Exiting..."
-                exit 130
-              fi
-              if [[ "$arrow" == "[A" || "$arrow" == "[B" || "$arrow" == "[C" || "$arrow" == "[D" ]]; then
-                PAUSE=1
-                printf "\r\033[K"
-                while true; do
-                  read -n 1 -r PAUSE_CONT 2>/dev/null
-                  if [ $? -eq 130 ]; then
-                    echo -e "\n\nInterrupted by user. Exiting..."
-                    exit 130
-                  fi
-                  if [[ "$PAUSE_CONT" =~ ^[Yy]$ ]]; then
-                    USER_CONT="y"
-                    break
-                  elif [[ "$PAUSE_CONT" =~ ^[Nn]$ ]]; then
-                    USER_CONT="n"
-                    break
-                  fi
-                done
-                break
-              fi
-            elif [[ "$USER_CONT" =~ ^[Yy]$ || "$USER_CONT" == " " || "$USER_CONT" == $'\n' ]]; then
-              USER_CONT="y"
-              break
-            elif [[ "$USER_CONT" =~ ^[Nn]$ ]]; then
-              USER_CONT="n"
-              break
-            fi
-          fi
-          COUNTDOWN=$((COUNTDOWN-1))
-        done
-        if [ -z "$USER_CONT" ]; then
-          USER_CONT="y"
-        fi
-        if [[ "$USER_CONT" =~ ^[Yy]$ ]]; then
-          clear
-        else
-          echo -e "\nExiting as requested."
-          exit 0
-        fi
+    ./init.sh
+    USER_CONT=$(prompt_with_getinput "Continue to tools install menu? [y/n]" "y" 10)
+    if [ -z "$USER_CONT" ]; then
+      USER_CONT="y"
+    fi
+    if [[ "$USER_CONT" =~ ^[Yy]$ ]]; then
+      clear
+    else
+      echo -e "\nExiting as requested."
+      exit 0
+    fi
   fi
 fi
 
 # Source the menu script to load functions and variables
-source ./helpers/menu.sh
+source "$ABS_PATH/helpers/menu.sh"
 
 # Call main to show menu and get user selections
 main
 
 # Set up trap to handle Ctrl+C properly (after menu.sh which has its own trap)
 trap 'echo -e "\n\nInterrupted by user. Exiting..."; exit 130' INT
-ABS_PATH=$(dirname "$(realpath "$0")")
 
 # Reconstruct OPTIONS array from exported variables
 declare -A OPTIONS
@@ -155,106 +103,19 @@ is_valid_fqdn() {
 
 # require user input.
 if [ "${OPTIONS[passwordless_sudoer]}" = "1" ]; then
-  while true; do
-    printf "\rSet SUDO protection secret: \n"
-    for i in {10..1}; do
-      printf "\r(auto-skip in %d seconds)" "$i"
-      if read -t 1 -n 1 -s -r SUDO_SECRET 2>/dev/null; then
-        if [[ "$SUDO_SECRET" == $'\x1b' ]]; then
-          read -t 0.1 -n 2 arrow 2>/dev/null
-            if [ $? -eq 130 ]; then
-              echo -e "\n\nInterrupted by user. Exiting..."
-              exit 130
-            fi
-          if [[ "$arrow" == "[A" || "$arrow" == "[B" || "$arrow" == "[C" || "$arrow" == "[D" ]]; then
-            printf "\r\033[K"
-            while true; do
-              read -n 1 -s userkey
-                if [ $? -eq 130 ]; then
-                  echo -e "\n\nInterrupted by user. Exiting..."
-                  exit 130
-                fi
-              if [[ "$userkey" == $'\x1b' ]]; then
-                read -t 0.1 -n 2 arrow2 2>/dev/null
-                  if [ $? -eq 130 ]; then
-                    echo -e "\n\nInterrupted by user. Exiting..."
-                    exit 130
-                  fi
-                printf "\r\033[K"
-                continue
-              fi
-              SUDO_SECRET="$userkey"
-              break
-            done
-          fi
-        fi
-        break
-      fi
-        if [ $? -eq 130 ]; then
-          echo -e "\n\nInterrupted by user. Exiting..."
-          exit 130
-        fi
-    done
-    read_status=$?
-    echo
-    if [ $read_status -ne 0 ]; then
-      echo -e "\nCancelled. Skipping sudo secret setup." >&2
-      unset SUDO_SECRET
-      break
-    fi
-    if [ -z "$SUDO_SECRET" ]; then
-      echo "Error: SUDO secret cannot be empty." >&2
-        echo "Skipping sudo secret setup automatically."
-        unset SUDO_SECRET
-        break
-    else
-      break
-    fi
-  done
+  SUDO_SECRET=$(prompt_with_getinput "Set SUDO protection secret" "" 10 "dotted")
+  if [ -z "$SUDO_SECRET" ]; then
+    echo "Error: SUDO secret cannot be empty." >&2
+    echo "Skipping sudo secret setup automatically."
+    unset SUDO_SECRET
+  fi
 fi
 
 # might require user input
 if [ "${OPTIONS[webserver]}" = "1" ]; then
   if [ "${OPTIONS[apache_domains]}" = "1" ]; then
     printf "extremely recommended to provide the main FQDN now\nother programs if also are being installed will be configured in one go.\nprovide it now ? [y/n] \n"
-    for i in {10..1}; do
-      printf "\r(auto-selects 'n' in %d seconds): " "$i"
-      if read -t 1 -n 1 -r ADD_FQDN_NOW 2>/dev/null; then
-        if [[ "$ADD_FQDN_NOW" == $'\x1b' ]]; then
-          read -t 0.1 -n 2 arrow 2>/dev/null
-            if [ $? -eq 130 ]; then
-              echo -e "\n\nInterrupted by user. Exiting..."
-              exit 130
-            fi
-          if [[ "$arrow" == "[A" || "$arrow" == "[B" || "$arrow" == "[C" || "$arrow" == "[D" ]]; then
-            printf "\r\033[K"
-            while true; do
-              read -n 1 userkey
-                if [ $? -eq 130 ]; then
-                  echo -e "\n\nInterrupted by user. Exiting..."
-                  exit 130
-                fi
-              if [[ "$userkey" == $'\x1b' ]]; then
-                read -t 0.1 -n 2 arrow2 2>/dev/null
-                  if [ $? -eq 130 ]; then
-                    echo -e "\n\nInterrupted by user. Exiting..."
-                    exit 130
-                  fi
-                printf "\r\033[K"
-                continue
-              fi
-              ADD_FQDN_NOW="$userkey"
-              break
-            done
-          fi
-        fi
-        break
-      fi
-        if [ $? -eq 130 ]; then
-          echo -e "\n\nInterrupted by user. Exiting..."
-          exit 130
-        fi
-    done
+    ADD_FQDN_NOW=$(prompt_with_getinput "Provide the main FQDN now? [y/n]" "n" 10)
     if [ -z "$ADD_FQDN_NOW" ]; then
       ADD_FQDN_NOW="n"
     fi
@@ -291,64 +152,15 @@ fi
 # require user input.
 if [ "${OPTIONS[phpmyadmin]}" = "1" ]; then
   while true; do
-    printf "\rset phpmyadmin database user password: \n"
-    for i in {10..1}; do
-      printf "\r(auto-skip in %d seconds): "  "$i"
-      if read -t 1 -s -r PHPMYADMIN_SECRET 2>/dev/null; then
-        if [[ "$PHPMYADMIN_SECRET" == $'\x1b' ]]; then
-          read -t 0.1 -n 2 arrow 2>/dev/null
-            if [ $? -eq 130 ]; then
-              echo -e "\n\nInterrupted by user. Exiting..."
-              exit 130
-            fi
-          if [[ "$arrow" == "[A" || "$arrow" == "[B" || "$arrow" == "[C" || "$arrow" == "[D" ]]; then
-            printf "\r\033[K"
-            while true; do
-              IFS= read -s -r -p "" user_input
-              read_status=$?
-              echo
-              if [ $read_status -eq 130 ]; then
-                echo -e "\n\nInterrupted by user. Exiting..."
-                exit 130
-              fi
-              if [ $read_status -ne 0 ]; then
-                printf "\r\033[K"
-                continue
-              fi
-              if [[ "$user_input" == $'\x1b' ]]; then
-                read -t 0.1 -n 2 arrow2 2>/dev/null
-                if [ $? -eq 130 ]; then
-                  echo -e "\n\nInterrupted by user. Exiting..."
-                  exit 130
-                fi
-                printf "\r\033[K"
-                continue
-              fi
-              PHPMYADMIN_SECRET="$user_input"
-              break
-            done
-          fi
-        fi
-        break
-      fi
-        if [ $? -eq 130 ]; then
-          echo -e "\n\nInterrupted by user. Exiting..."
-          exit 130
-        fi
-    done
-    read_status=$?
-    echo 
-    if [ $read_status -ne 0 ]; then
-      echo -e "\nCancelled. Skipping phpMyAdmin secret setup." >&2
-      unset PHPMYADMIN_SECRET
-      break
-    fi
+    PHPMYADMIN_SECRET=$(prompt_with_getinput "Set phpMyAdmin database user password" "" 10 "dotted")
     if [ -z "$PHPMYADMIN_SECRET" ]; then
       echo "Error: phpMyAdmin secret cannot be empty." >&2
       read -r -p "Skip phpMyAdmin secret setup? [y/n]: " SKIP_PHPMYADMIN_SECRET
       if [ $? -ne 0 ] || [ "$SKIP_PHPMYADMIN_SECRET" = "y" ] || [ "$SKIP_PHPMYADMIN_SECRET" = "Y" ]; then
+        unset PHPMYADMIN_SECRET
         break
       fi
+      continue
     else
       break
     fi
@@ -359,56 +171,12 @@ fi
 if [ "${OPTIONS[certbot]}" = "1" ]; then
   cert_bot_email_prompt(){
     while true; do
-      printf "\rcertbot email: \n"
-      for i in {10..1}; do
-        printf "\r(auto-skip in %d seconds): " "$i"
-        if read -t 1 -r CERTBOT_EMAIL 2>/dev/null; then
-          if [[ "$CERTBOT_EMAIL" == $'\x1b' ]]; then
-            read -t 0.1 -n 2 arrow 2>/dev/null
-              if [ $? -eq 130 ]; then
-                echo -e "\n\nInterrupted by user. Exiting..."
-                exit 130
-              fi
-            if [[ "$arrow" == "[A" || "$arrow" == "[B" || "$arrow" == "[C" || "$arrow" == "[D" ]]; then
-              printf "\r\033[K"
-              while true; do
-                read -n 1 userkey
-                  if [ $? -eq 130 ]; then
-                    echo -e "\n\nInterrupted by user. Exiting..."
-                    exit 130
-                  fi
-                if [[ "$userkey" == $'\x1b' ]]; then
-                  read -t 0.1 -n 2 arrow2 2>/dev/null
-                    if [ $? -eq 130 ]; then
-                      echo -e "\n\nInterrupted by user. Exiting..."
-                      exit 130
-                    fi
-                  printf "\r\033[K"
-                  continue
-                fi
-                CERTBOT_EMAIL="$userkey"
-                break
-              done
-            fi
-          fi
-          break
-        fi
-          if [ $? -eq 130 ]; then
-            echo -e "\n\nInterrupted by user. Exiting..."
-            exit 130
-          fi
-      done
-      echo
-      read -r -p "certbot email is required when installing certbot: " CERTBOT_EMAIL
-      if [ $? -ne 0 ]; then
-        echo -e "\nCancelled. Skipping certbot email setup." >&2
-        unset CERTBOT_EMAIL
-        return 1
-      fi
+      CERTBOT_EMAIL=$(prompt_with_getinput "certbot email (required when installing certbot)" "" 10)
       if [ -z "$CERTBOT_EMAIL" ]; then
         echo "Error: certbot email cannot be empty." >&2
         read -r -p "Skip certbot email setup? [y/n]: " SKIP_CERTBOT_EMAIL
         if [ $? -ne 0 ] || [ "$SKIP_CERTBOT_EMAIL" = "y" ] || [ "$SKIP_CERTBOT_EMAIL" = "Y" ]; then
+          unset CERTBOT_EMAIL
           return 1
         fi
       else
@@ -478,51 +246,9 @@ if [ "${OPTIONS[docker_mailserver]}" = "1" ]; then
         1- hostname (FQDN)
         2- email (recommended)
         provide a number or c to cancel\n"
-    for i in {10..1}; do
-      printf "(\rauto-cancels in %d seconds): " "$i"
-      if read -t 1 -r DMS_CHOICE 2>/dev/null; then
-        if [[ "$DMS_CHOICE" == $'\x1b' ]]; then
-          read -t 0.1 -n 2 arrow 2>/dev/null
-            if [ $? -eq 130 ]; then
-              echo -e "\n\nInterrupted by user. Exiting..."
-              exit 130
-            fi
-          if [[ "$arrow" == "[A" || "$arrow" == "[B" || "$arrow" == "[C" || "$arrow" == "[D" ]]; then
-            printf "\r\033[K"
-            while true; do
-              read -n 1 userkey
-                if [ $? -eq 130 ]; then
-                  echo -e "\n\nInterrupted by user. Exiting..."
-                  exit 130
-                fi
-              if [[ "$userkey" == $'\x1b' ]]; then
-                read -t 0.1 -n 2 arrow2 2>/dev/null
-                  if [ $? -eq 130 ]; then
-                    echo -e "\n\nInterrupted by user. Exiting..."
-                    exit 130
-                  fi
-                printf "\r\033[K"
-                continue
-              fi
-              DMS_CHOICE="$userkey"
-              break
-            done
-          fi
-        fi
-        break
-      fi
-        if [ $? -eq 130 ]; then
-          echo -e "\n\nInterrupted by user. Exiting..."
-          exit 130
-        fi
-    done
+    DMS_CHOICE=$(prompt_with_getinput "Select 1 for hostname, 2 for email, or c to cancel" "c" 10)
     if [ -z "$DMS_CHOICE" ]; then
       DMS_CHOICE="c"
-    fi
-    if [ $? -ne 0 ]; then
-      echo -e "\nCancelled. Skipping docker mailserver setup." >&2
-      SKIP_DMS=true
-      break
     fi
 
     if [ "$DMS_CHOICE" = "c" ] || [ "$DMS_CHOICE" = "C" ]; then
