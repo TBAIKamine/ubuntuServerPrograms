@@ -238,25 +238,26 @@ if [ "${OPTIONS[docker_mailserver]}" = "1" ]; then
         1- hostname (FQDN)
         2- email (recommended)
         provide a number or c to cancel\n"
+
     DMS_CHOICE=$(prompt_with_getinput "Select 1 for hostname, 2 for email, or c to cancel" "c" 10)
-    if [ -z "$DMS_CHOICE" ]; then
-      DMS_CHOICE="c"
+    status=$?
+    if [ $status -eq 200 ] || [ -z "$DMS_CHOICE" ]; then
+      # user chose to skip at the main choice prompt
+      SKIP_DMS=true
+      break
     fi
 
     if [ "$DMS_CHOICE" = "c" ] || [ "$DMS_CHOICE" = "C" ]; then
-      read -r -p "Do you want to skip installing docker mailserver? [y/n]: " SKIP_DMS_CONFIRM
-      if [ $? -ne 0 ] || [ "$SKIP_DMS_CONFIRM" = "y" ] || [ "$SKIP_DMS_CONFIRM" = "Y" ]; then
-        SKIP_DMS=true
-        break
-      fi
-      # If user said no, loop back to original question
-      continue
+      # explicit cancel treated as skip
+      SKIP_DMS=true
+      break
     elif [ "$DMS_CHOICE" = "1" ]; then
       # User chose hostname (FQDN)
       while true; do
-        read -r -p "Enter FQDN for docker mailserver: " DMS_HOSTNAME
-        if [ $? -ne 0 ]; then
-          echo -e "\nCancelled. Skipping docker mailserver setup." >&2
+        DMS_HOSTNAME=$(prompt_with_getinput "Enter FQDN for docker mailserver" "" 10 "visible" "false" "true" "false")
+        status=$?
+        if [ $status -eq 200 ]; then
+          # user chose to skip
           SKIP_DMS=true
           break 2
         fi
@@ -264,13 +265,8 @@ if [ "${OPTIONS[docker_mailserver]}" = "1" ]; then
           # Valid FQDN provided
           break 2  # Break out of both loops
         else
-          # Invalid FQDN
-          read -r -p "Do you want to skip installing docker mailserver? [y/n]: " SKIP_DMS_CONFIRM
-          if [ $? -ne 0 ] || [ "$SKIP_DMS_CONFIRM" = "y" ] || [ "$SKIP_DMS_CONFIRM" = "Y" ]; then
-            SKIP_DMS=true
-            break 2  # Break out of both loops
-          fi
-          # If user said no, loop back to FQDN input
+          # Invalid FQDN; loop back unless user uses skip
+          echo "Error: Invalid FQDN format: $DMS_HOSTNAME" >&2
         fi
       done
     elif [ "$DMS_CHOICE" = "2" ]; then
@@ -278,9 +274,10 @@ if [ "${OPTIONS[docker_mailserver]}" = "1" ]; then
       while true; do
         # Check if certbot email was provided earlier
         if [ -n "$CERTBOT_EMAIL" ]; then
-          read -r -p "Use the same previous email ($CERTBOT_EMAIL)? [y/n]: " USE_CERTBOT_EMAIL
-          if [ $? -ne 0 ]; then
-            echo -e "\nCancelled." >&2
+          USE_CERTBOT_EMAIL=$(prompt_with_getinput "Use the same previous email ($CERTBOT_EMAIL)? [y/n]" "y" 10)
+          status=$?
+          if [ $status -eq 200 ]; then
+            # treat skip here as not using existing email, continue to prompt
             USE_CERTBOT_EMAIL="n"
           fi
           if [ "$USE_CERTBOT_EMAIL" = "y" ] || [ "$USE_CERTBOT_EMAIL" = "Y" ]; then
@@ -288,10 +285,11 @@ if [ "${OPTIONS[docker_mailserver]}" = "1" ]; then
             break 2  # Break out of both loops
           fi
         fi
-        
-        read -r -p "Enter email for docker mailserver: " DMS_EMAIL_INPUT
-        if [ $? -ne 0 ]; then
-          echo -e "\nCancelled. Skipping docker mailserver setup." >&2
+
+        DMS_EMAIL_INPUT=$(prompt_with_getinput "Enter email for docker mailserver" "" 10 "visible" "false" "true" "false")
+        status=$?
+        if [ $status -eq 200 ]; then
+          # user chose to skip email entry
           SKIP_DMS=true
           break 2
         fi
@@ -300,24 +298,14 @@ if [ "${OPTIONS[docker_mailserver]}" = "1" ]; then
           DMS_EMAIL="$DMS_EMAIL_INPUT"
           break 2  # Break out of both loops
         else
-          # Invalid email
-          read -r -p "Do you want to skip installing docker mailserver? [y/n]: " SKIP_DMS_CONFIRM
-          if [ $? -ne 0 ] || [ "$SKIP_DMS_CONFIRM" = "y" ] || [ "$SKIP_DMS_CONFIRM" = "Y" ]; then
-            SKIP_DMS=true
-            break 2  # Break out of both loops
-          fi
-          # If user said no, loop back to email input
+          # Invalid email; loop back unless user uses skip
+          echo "Error: Email format is invalid" >&2
         fi
       done
     else
-      # Invalid choice, ask to skip or retry
+      # Invalid choice; let user retry via loop, or use skip at prompt
       echo "Error: Invalid choice. Please enter 1, 2, or c" >&2
-      read -r -p "Do you want to skip installing docker mailserver? [y/n]: " SKIP_DMS_CONFIRM
-      if [ $? -ne 0 ] || [ "$SKIP_DMS_CONFIRM" = "y" ] || [ "$SKIP_DMS_CONFIRM" = "Y" ]; then
-        SKIP_DMS=true
-        break
-      fi
-      # If user said no, loop back to original question
+      # loop will re-run and user can use ESC to skip at the main choice prompt
     fi
   done
 fi
