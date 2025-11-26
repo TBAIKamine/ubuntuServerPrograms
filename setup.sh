@@ -121,7 +121,7 @@ fi
 # might require user input
 if [ "${OPTIONS[webserver]}" = "1" ]; then
   if [ "${OPTIONS[apache_domains]}" = "1" ]; then
-    printf "extremely recommended to provide the main FQDN now\n(other programs if also are being installed will be configured in one go).\n"
+    printf "It is extremely recommended to provide the main FQDN now\n(other programs if also are being installed will be configured in one go).\n"
     ADD_FQDN_NOW=$(prompt_with_getinput "Provide the main FQDN now? [y/n]" "n" 10)
     if [ -z "$ADD_FQDN_NOW" ]; then
       ADD_FQDN_NOW="n"
