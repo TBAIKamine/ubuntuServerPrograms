@@ -70,17 +70,21 @@ show_confirmation(){
       if [ -n "$final_value" ]; then
         confirmation="[default applied]"
       else
-        confirmation="Input taken"
+        confirmation="Input taken: (empty)"
       fi
     elif [ "$typed_len" -gt 0 ]; then
       local dots
       dots=$(printf "%${typed_len}s" "" | tr ' ' '*')
       confirmation="Input taken: ${dots}"
     else
-      confirmation="Input taken"
+      confirmation="Input taken: (empty)"
     fi
   else
-    confirmation="Input taken: $final_value"
+    if [ -n "$final_value" ]; then
+      confirmation="Input taken: $final_value"
+    else
+      confirmation="Input taken: (empty)"
+    fi
   fi
 
   printf "%s\n" "$confirmation" >&2
