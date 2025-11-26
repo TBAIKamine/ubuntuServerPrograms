@@ -10,11 +10,42 @@ collect_input_with_confirm(){
   local show_prompt="${5-true}"
   local require_confirm="${6-false}"
   local show_confirmation_text="${7-true}"
+  local empty_allowed="${8-true}"
   local first second
 
   while true; do
+    if [ "$empty_allowed" != "true" ]; then
+      printf "\nNote: This value cannot be empty. Press ENTER to retry, or 's' to skip.\n" >&2
+    fi
+
     first=$(read_line_with_visibility "$prompt_text" "$default_val" "$visibility_mode" "$initial_text" "$show_prompt" "$show_confirmation_text")
     first="${first%$'\n'}"
+
+    if [ "$empty_allowed" != "true" ] && [ -z "$first" ]; then
+      # Ask user whether to retry or skip
+      local choice
+      printf "Input cannot be empty. retry [ENTER] or skip [s]: " >&2
+      IFS= read -rsN1 choice 2>/dev/null || true
+      printf "\n" >&2
+      case "$choice" in
+        "" )
+          # retry outer loop
+          initial_text=""
+          show_prompt="true"
+          ;;
+        "s"|"S")
+          # indicate skip to caller with special exit code 200
+          return 200
+          ;;
+        *)
+          # any other key behaves like retry
+          initial_text=""
+          show_prompt="true"
+          ;;
+      esac
+      continue
+    fi
+
     if [ "$require_confirm" != "true" ]; then
       printf "%s\n" "$first"
       return 0
@@ -139,6 +170,7 @@ getInput(){
   local visibility_mode="${4-visible}"
   local confirm_required="${5-false}"
   local show_confirmation_text="${6-true}"
+  local empty_allowed="${7-true}"
   local seconds header key rest input
   header="$prompt_text"
   [ -n "$default_val" ] && header+=" [$default_val]"
@@ -150,8 +182,8 @@ getInput(){
       case "$key" in
         $'\x03') printf "\n" >&2; exit 130 ;;
         $'\n'|$'\r'|$' ') printf "\r\033[K" >&2; if [ "$show_confirmation_text" = "true" ]; then show_confirmation "$visibility_mode" "$default_val" 0 true; fi; printf "%s\n" "${default_val}"; return 0 ;;
-        $'\e') read -rsn2 -t 0.01 rest 2>/dev/null || true; printf "\r\033[K" >&2; collect_input_with_confirm "$prompt_text" "$default_val" "$visibility_mode" "" "false" "$confirm_required" "$show_confirmation_text"; return 0 ;;
-        *) printf "\r\033[K" >&2; collect_input_with_confirm "$prompt_text" "$default_val" "$visibility_mode" "$key" "false" "$confirm_required" "$show_confirmation_text"; return 0 ;;
+        $'\e') read -rsn2 -t 0.01 rest 2>/dev/null || true; printf "\r\033[K" >&2; collect_input_with_confirm "$prompt_text" "$default_val" "$visibility_mode" "" "false" "$confirm_required" "$show_confirmation_text" "$empty_allowed"; return 0 ;;
+        *) printf "\r\033[K" >&2; collect_input_with_confirm "$prompt_text" "$default_val" "$visibility_mode" "$key" "false" "$confirm_required" "$show_confirmation_text" "$empty_allowed"; return 0 ;;
       esac
     fi
     seconds=$((seconds - 1))

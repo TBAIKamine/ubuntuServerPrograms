@@ -9,6 +9,7 @@ prompt_with_getinput() {
   local visibility_mode="${4-visible}"
   local require_confirm="${5-false}"
   local show_confirmation_text="${6-false}"
+  local empty_flag="${7-true}"
   local raw result status
 
   raw=$(
@@ -16,10 +17,14 @@ prompt_with_getinput() {
     (
       # Source inside subshell to avoid leaking helper shell options into this script
       source "$ABS_PATH/helpers/getinput.sh"
-      getInput "$prompt_text" "$default_val" "$timeout_sec" "$visibility_mode" "$require_confirm" "$show_confirmation_text"
+      getInput "$prompt_text" "$default_val" "$timeout_sec" "$visibility_mode" "$require_confirm" "$show_confirmation_text" "$empty_flag"
     )
   )
   status=$?
+  # 200 is special exit code from getinput meaning "user chose to skip"
+  if [ $status -eq 200 ]; then
+    return 200
+  fi
   if [ $status -ne 0 ]; then
     exit $status
   fi
@@ -105,10 +110,10 @@ is_valid_fqdn() {
 
 # require user input.
 if [ "${OPTIONS[passwordless_sudoer]}" = "1" ]; then
-  SUDO_SECRET=$(prompt_with_getinput "Set SUDO protection secret" "" 10 "dotted" "true")
-  if [ -z "$SUDO_SECRET" ]; then
-    echo "Error: SUDO secret cannot be empty." >&2
-    echo "Skipping sudo secret setup automatically."
+  SUDO_SECRET=$(prompt_with_getinput "Set SUDO protection secret" "" 10 "dotted" "true" "true" "false")
+  status=$?
+  if [ $status -eq 200 ] || [ -z "$SUDO_SECRET" ]; then
+    echo "Skipping sudo secret setup as requested."
     unset SUDO_SECRET
   fi
 fi
@@ -123,24 +128,23 @@ if [ "${OPTIONS[webserver]}" = "1" ]; then
     fi
     if [ "$ADD_FQDN_NOW" = "y" ] || [ "$ADD_FQDN_NOW" = "Y" ]; then
       while true; do
-        FQDN=$(prompt_with_getinput "main FQDN" "" 10 "visible" "true" "true")
+        FQDN=$(prompt_with_getinput "main FQDN" "" 10 "visible" "true" "true" "false")
+        status=$?
+        if [ $status -eq 200 ]; then
+          # user chose to skip
+          unset FQDN
+          break
+        fi
         # Validate FQDN existence
         if [ -z "$FQDN" ]; then
             echo "Error: FQDN can not be empty" >&2
-            read -r -p "changed your mind and want to skip for now? [y/n]: " SKIP_FQDN
-            if [ $? -ne 0 ] || [ "$SKIP_FQDN" = "y" ] || [ "$SKIP_FQDN" = "Y" ]; then
-              break
-            fi
-        else
-          if [[ ! "$FQDN" =~ ^[a-zA-Z0-9]([a-zA-Z0-9-]*[a-zA-Z0-9])?(\.[a-zA-Z0-9]([a-zA-Z0-9-]*[a-zA-Z0-9])?)*$ ]]; then
-              echo "Error: Invalid FQDN format: $FQDN" >&2
-              if [ "$SKIP_FQDN" = "y" ] || [ "$SKIP_FQDN" = "Y" ]; then
-                break
-              fi
-          else
-              break
-          fi
+            continue
         fi
+        if [[ ! "$FQDN" =~ ^[a-zA-Z0-9]([a-zA-Z0-9-]*[a-zA-Z0-9])?(\.[a-zA-Z0-9]([a-zA-Z0-9-]*[a-zA-Z0-9])?)*$ ]]; then
+            echo "Error: Invalid FQDN format: $FQDN" >&2
+            continue
+        fi
+        break
       done
     fi
   fi
@@ -149,18 +153,13 @@ fi
 # require user input.
 if [ "${OPTIONS[phpmyadmin]}" = "1" ]; then
   while true; do
-    PHPMYADMIN_SECRET=$(prompt_with_getinput "Set phpMyAdmin database user password" "" 10 "dotted" "true")
-    if [ -z "$PHPMYADMIN_SECRET" ]; then
-      echo "Error: phpMyAdmin secret cannot be empty." >&2
-      read -r -p "Skip phpMyAdmin secret setup? [y/n]: " SKIP_PHPMYADMIN_SECRET
-      if [ $? -ne 0 ] || [ "$SKIP_PHPMYADMIN_SECRET" = "y" ] || [ "$SKIP_PHPMYADMIN_SECRET" = "Y" ]; then
-        unset PHPMYADMIN_SECRET
-        break
-      fi
-      continue
-    else
+    PHPMYADMIN_SECRET=$(prompt_with_getinput "Set phpMyAdmin database user password" "" 10 "dotted" "true" "true" "false")
+    status=$?
+    if [ $status -eq 200 ] || [ -z "$PHPMYADMIN_SECRET" ]; then
+      unset PHPMYADMIN_SECRET
       break
     fi
+    break
   done
 fi
 
@@ -168,17 +167,13 @@ fi
 if [ "${OPTIONS[certbot]}" = "1" ]; then
   cert_bot_email_prompt(){
     while true; do
-      CERTBOT_EMAIL=$(prompt_with_getinput "certbot email (required when installing certbot)" "" 10)
-      if [ -z "$CERTBOT_EMAIL" ]; then
-        echo "Error: certbot email cannot be empty." >&2
-        read -r -p "Skip certbot email setup? [y/n]: " SKIP_CERTBOT_EMAIL
-        if [ $? -ne 0 ] || [ "$SKIP_CERTBOT_EMAIL" = "y" ] || [ "$SKIP_CERTBOT_EMAIL" = "Y" ]; then
-          unset CERTBOT_EMAIL
-          return 1
-        fi
-      else
-        return 0
+      CERTBOT_EMAIL=$(prompt_with_getinput "certbot email (required when installing certbot)" "" 10 "visible" "false" "true" "false")
+      status=$?
+      if [ $status -eq 200 ] || [ -z "$CERTBOT_EMAIL" ]; then
+        unset CERTBOT_EMAIL
+        return 1
       fi
+      return 0
     done
   }
   cert_bot_email_prompt
