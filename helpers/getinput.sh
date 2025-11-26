@@ -28,7 +28,7 @@ read_line_with_visibility(){
   fi
 
   while true; do
-    IFS= read -rsn1 ch || true
+    IFS= read -rsN1 ch || true
     case "$ch" in
       $'\x03')
         printf "\n"
