@@ -328,7 +328,8 @@ if [ -n "$SUDO_SECRET" ]; then
     echo
   else
     print_status "Installing passwordless sudoer... "
-    bash ./helpers/passwdless_sudoer.sh >>./log 2>&1 &
+    # pass SUDO_SECRET into the helper's environment without exporting it globally
+    SUDO_SECRET="$SUDO_SECRET" bash ./helpers/passwdless_sudoer.sh >>./log 2>&1 &
     bash ./helpers/progress.sh $!
     echo
   fi
@@ -457,7 +458,8 @@ if [ "${OPTIONS[roundcube]}" = "1" ]; then
     echo
   else
     print_status "Installing Roundcube webmail... "
-    bash ./helpers/roundcube_install.sh >>./log 2>&1 &
+    # pass FQDN into the helper so it can configure vhosts when provided
+    FQDN="$FQDN" bash ./helpers/roundcube_install.sh >>./log 2>&1 &
     bash ./helpers/progress.sh $!
     echo
   fi
@@ -561,7 +563,8 @@ if [ "${OPTIONS[docker_mailserver]}" = "1" ]; then
     echo
   else
     print_status "Installing Docker Mailserver... "
-    bash ./helpers/dms_install.sh >>./log 2>&1 &
+    # pass DMS_EMAIL/DMS_HOSTNAME into the helper's environment so it can use them
+    DMS_EMAIL="$DMS_EMAIL" DMS_HOSTNAME="$DMS_HOSTNAME" bash ./helpers/dms_install.sh >>./log 2>&1 &
     bash ./helpers/progress.sh $!
     echo
   fi
