@@ -187,43 +187,6 @@ if [ "${OPTIONS[certbot]}" = "1" ]; then
           break
         fi
       else
-        certbot register --non-interactive --agree-tos -m $CERTBOT_EMAIL
-        read -r -p "would you like to add namecheap username and api key now ? (extremely helpful) [y/n]: " ADD_NAMECHEAP
-        if [ $? -ne 0 ]; then
-          echo -e "\nCancelled." >&2
-          ADD_NAMECHEAP="n"
-        fi
-        if [ "$ADD_NAMECHEAP" = "y" ] || [ "$ADD_NAMECHEAP" = "Y" ]; then
-          while true; do
-            read -r -p "namecheap username: " NC_USERNAME
-            if [ $? -ne 0 ]; then
-              echo -e "\nCancelled. Skipping namecheap credentials." >&2
-              unset NC_USERNAME NC_API_KEY
-              break
-            fi
-            read -r -s -p "namecheap api key: " NC_API_KEY
-            read_status=$?
-            echo  # Add newline after password input
-            if [ $read_status -ne 0 ]; then
-              echo -e "\nCancelled. Skipping namecheap credentials." >&2
-              unset NC_USERNAME NC_API_KEY
-              break
-            fi
-            # validate non empty, loop until valid or skip
-            if [ -z "$NC_USERNAME" ] || [ -z "$NC_API_KEY" ]; then
-              echo "Error: Namecheap username and API key cannot be empty." >&2
-              read -r -p "Do you want to skip adding namecheap credentials? [y/n]: " SKIP_NC
-              if [ $? -ne 0 ] || [ "$SKIP_NC" = "y" ] || [ "$SKIP_NC" = "Y" ]; then
-                unset NC_USERNAME NC_API_KEY
-                break
-              fi
-              # If user said no, loop back to prompt
-            else
-              fqdncredmgr add namecheap.com "$NC_USERNAME" "$NC_API_KEY"
-              break
-            fi
-          done
-        fi
         break
       fi
     done
@@ -329,7 +292,6 @@ if [ -n "$SUDO_SECRET" ]; then
   else
     print_status "Installing passwordless sudoer... "
     # pass SUDO_SECRET into the helper's environment without exporting it globally
-    echo "the secret is: $SUDO_SECRET" > /home/user/log1
     SUDO_SECRET="$SUDO_SECRET" bash ./helpers/passwdless_sudoer.sh >>./log 2>&1 &
     bash ./helpers/progress.sh $!
     echo
@@ -395,35 +357,61 @@ if [ "${OPTIONS[apache_domains]}" = "1" ]; then
 
 fi
 
-if [ "${OPTIONS[apache_domains]}" = "1" ]; then
-  if [ -x "/usr/local/bin/a2sitemng" ] && [ -x "/usr/local/bin/fqdncredmgr" ] && [ -x "/usr/local/bin/fqdnmgr" ] && [ -x "/usr/local/bin/a2wcrecalc" ]; then
-    print_status "Apache domain management tools already installed. Skipping... "
+if [ "${OPTIONS[certbot]}" = "1" ]; then
+  if dpkg -s certbot &>/dev/null; then
+    print_status "Certbot already installed. Skipping... "
     echo
   else
-    print_status "Installing Apache domain management tools... "
+    print_status "Installing Certbot... "
     {
-      cp $ABS_PATH/helpers/a2sitemng /usr/local/bin/a2sitemng
-      chmod +x /usr/local/bin/a2sitemng
-      chown root:root /usr/local/bin/a2sitemng
-      chmod 550 /usr/local/bin/a2sitemng
-      cp $ABS_PATH/helpers/fqdncredmgr /usr/local/bin/fqdncredmgr
-      chmod +x /usr/local/bin/fqdncredmgr
-      chown root:root /usr/local/bin/fqdncredmgr
-      chmod 550 /usr/local/bin/fqdncredmgr
-      cp $ABS_PATH/helpers/fqdnmgr /usr/local/bin/fqdnmgr
-      chmod +x /usr/local/bin/fqdnmgr
-      chown root:root /usr/local/bin/fqdnmgr
-      chmod 550 /usr/local/bin/fqdnmgr
-      cp $ABS_PATH/helpers/a2wcrecalc /usr/local/bin/a2wcrecalc
-      chmod +x /usr/local/bin/a2wcrecalc
-      chown root:root /usr/local/bin/a2wcrecalc
-      chmod 550 /usr/local/bin/a2wcrecalc
-      hash -r
-      apt install whois -y
-      WAN_IP=$(curl -s https://api.ipify.org 2>/dev/null)
-      if [ -n "$WAN_IP" ]; then
-        echo "export WAN_IP=$WAN_IP" >> /home/user/.bashrc
-        export WAN_IP=$WAN_IP
+      apt install certbot -y
+      if [ -n "$CERTBOT_EMAIL" ]; then
+        certbot register --agree-tos --non-interactive --no-eff-email --email "$CERTBOT_EMAIL" >>./log 2>&1
+        read -r -p "would you like to add namecheap username and api key now ? (extremely helpful) [y/n]: " ADD_NAMECHEAP
+        if [ $? -ne 0 ]; then
+          echo -e "\nCancelled." >&2
+          ADD_NAMECHEAP="n"
+        fi
+        if [ "$ADD_NAMECHEAP" = "y" ] || [ "$ADD_NAMECHEAP" = "Y" ]; then
+          while true; do
+            read -r -p "namecheap username: " NC_USERNAME
+            if [ $? -ne 0 ]; then
+              echo -e "\nCancelled. Skipping namecheap credentials." >&2
+              unset NC_USERNAME NC_API_KEY
+              break
+            fi
+            read -r -s -p "namecheap api key: " NC_API_KEY
+            read_status=$?
+            echo  # Add newline after password input
+            if [ $read_status -ne 0 ]; then
+              echo -e "\nCancelled. Skipping namecheap credentials." >&2
+              unset NC_USERNAME NC_API_KEY
+              break
+            fi
+            # validate non empty, loop until valid or skip
+            if [ -z "$NC_USERNAME" ] || [ -z "$NC_API_KEY" ]; then
+              echo "Error: Namecheap username and API key cannot be empty." >&2
+              read -r -p "Do you want to skip adding namecheap credentials? [y/n]: " SKIP_NC
+              if [ $? -ne 0 ] || [ "$SKIP_NC" = "y" ] || [ "$SKIP_NC" = "Y" ]; then
+                unset NC_USERNAME NC_API_KEY
+                break
+              fi
+              # If user said no, loop back to prompt
+            else
+              # credentials manager
+              if ! command -v fqdncredmgr &>/dev/null; then
+                cp $ABS_PATH/helpers/fqdncredmgr /usr/local/bin/fqdncredmgr
+                chmod +x /usr/local/bin/fqdncredmgr
+                chown root:root /usr/local/bin/fqdncredmgr
+                chmod 550 /usr/local/bin/fqdncredmgr
+                hash -r
+              fi
+              fqdncredmgr add namecheap.com "$NC_USERNAME" "$NC_API_KEY"
+              break
+            fi
+          done
+        fi
+
       fi
     } >>./log 2>&1 &
     bash ./helpers/progress.sh $!

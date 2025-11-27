@@ -1,6 +1,4 @@
 #!/bin/bash
-echo "the secret is: $SUDO_SECRET" > /home/user/log2
-
 # -- add conditional alias to .bashrc --
 {
 	BASHRC="/home/user/.bashrc"
@@ -34,7 +32,6 @@ echo "the secret is: $SUDO_SECRET" > /home/user/log2
 
 # -- storing the hash of the secret --
 {
-	printf '%s' "$SUDO_SECRET" | tr -d '\r\n' >> /home/user/log
 	printf '%s' "$SUDO_SECRET" | tr -d '\r\n' | sha256sum | awk '{print $1}' | tee /etc/sudo_secret.hash
 	chmod 440 /etc/sudo_secret.hash
 	chown root:root /etc/sudo_secret.hash
