@@ -1,5 +1,5 @@
 #!/bin/bash
-source getinput.sh
+source /usr/local/lib/scripts/getinput.sh
 SUDOERS_FILE="/etc/sudoers.d/secret_broker"
 
 # Check if argument is provided

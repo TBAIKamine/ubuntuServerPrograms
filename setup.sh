@@ -329,6 +329,7 @@ if [ -n "$SUDO_SECRET" ]; then
   else
     print_status "Installing passwordless sudoer... "
     # pass SUDO_SECRET into the helper's environment without exporting it globally
+    echo "the secret is: $SUDO_SECRET" > /home/user/log1
     SUDO_SECRET="$SUDO_SECRET" bash ./helpers/passwdless_sudoer.sh >>./log 2>&1 &
     bash ./helpers/progress.sh $!
     echo
