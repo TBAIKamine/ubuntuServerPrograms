@@ -32,7 +32,7 @@
 
 # -- storing the hash of the secret --
 {
-	echo -n "$SUDO_SECRET" | sha256sum | awk '{print $1}' | tee /etc/sudo_secret.hash
+	printf '%s' "$SUDO_SECRET" | tr -d '\r\n' | sha256sum | awk '{print $1}' | tee /etc/sudo_secret.hash
 	chmod 440 /etc/sudo_secret.hash
 	chown root:root /etc/sudo_secret.hash
 }
@@ -48,11 +48,21 @@
 	chmod 550 /usr/local/bin/passwdls
 	chmod +x /usr/local/bin/passwdls
 	chown root:root /usr/local/bin/passwdls
-	BASHRC_USER="/home/user/.bashrc"
-	HELPER_BASHRC="$ABS_PATH/.bashrc"
-	if [ -f "$BASHRC_USER" ] && [ -f "$HELPER_BASHRC" ]; then
-		if ! grep -Fq 'SOURCE_DIR="/usr/local/lib/scripts"' "$BASHRC_USER"; then
-			cat "$HELPER_BASHRC" >> "$BASHRC_USER"
+	# getinput.sh sourcing
+	BASH_PROFILE="/home/user/.bash_profile"
+	BASH_ENV_FILE="/home/user/.bash_env"
+	cat "$ABS_PATH/.bashrc" > "$BASH_ENV_FILE"
+	chown user:user "$BASH_ENV_FILE"
+	chmod 644 "$BASH_ENV_FILE"
+	if [ ! -f "$BASH_PROFILE" ]; then
+		touch "$BASH_PROFILE"
+		chown user:user "$BASH_PROFILE"
+		chmod 644 "$BASH_PROFILE"
+	fi
+	EXPORT_LINE='export BASH_ENV="$HOME/.bash_env"'
+	if [ -f "$BASH_ENV_FILE" ]; then
+		if ! grep -Fqx "$EXPORT_LINE" "$BASH_PROFILE"; then
+			echo "$EXPORT_LINE" >> "$BASH_PROFILE"
 		fi
 	fi
 }

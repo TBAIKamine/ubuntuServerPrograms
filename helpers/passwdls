@@ -44,8 +44,8 @@ case "$1" in
     if [ -f /etc/sudo_secret.hash ]; then
       chmod 700 /etc/sudo_secret.hash || true
     fi
-    # Write new hash (use the mechanism provided)
-    echo -n "${NEW_SECRET}" | sha256sum | awk '{print $1}' | tee /etc/sudo_secret.hash > /dev/null
+    # Write new hash (use printf and trim CR/newline for consistency)
+    printf '%s' "${NEW_SECRET}" | tr -d '\r\n' | sha256sum | awk '{print $1}' | tee /etc/sudo_secret.hash > /dev/null
     chmod 440 /etc/sudo_secret.hash
     chown root:root /etc/sudo_secret.hash || true
 
