@@ -15,7 +15,7 @@
 # -- allow the broker command to be executed without password from sudo --
 {
 	SUDOERS_FILE="/etc/sudoers.d/secret_broker"
-	SUDOERS_CONTENT="Defaults env_keep += \"DEVICE_ACCESS\"\nuser ALL = NOPASSWD: /usr/local/bin/sudo-broker.sh"
+	SUDOERS_CONTENT="Defaults env_keep += \"DEVICE_ACCESS\"\nDefaults env_keep += \"BASH_ENV\"\nDefaults env_keep += \"SOURCE_DIR\"\nuser ALL = NOPASSWD: /usr/local/bin/sudo-broker.sh"
 	echo -e "$SUDOERS_CONTENT" | tee "$SUDOERS_FILE" > /dev/null
 	chmod 550 "$SUDOERS_FILE"
 	chown root:root "$SUDOERS_FILE"
