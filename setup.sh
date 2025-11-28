@@ -1,7 +1,7 @@
 #!/bin/bash
 
+# first helpers and dependencies
 ABS_PATH=$(dirname "$(realpath "$0")")
-
 prompt_with_getinput() {
   local prompt_text="$1"
   local default_val="${2-}"
@@ -34,7 +34,7 @@ prompt_with_getinput() {
   printf "%s" "$result"
 }
 
-# ask if wants to execute init.sh first
+# init.sh
 if [ -d /etc/cryptsetup-keys.d ]; then
   echo "Do you want to execute init.sh first? [y/n]: "
   echo "it is extremely important and even essential for security however
@@ -58,24 +58,15 @@ if [ -d /etc/cryptsetup-keys.d ]; then
   fi
 fi
 
-# Source the menu script to load functions and variables
+# menu
 source "$ABS_PATH/helpers/menu.sh"
-
-# Call main to show menu and get user selections
 main
-
-# Set up trap to handle Ctrl+C properly (after menu.sh which has its own trap)
 trap 'echo -e "\n\nInterrupted by user. Exiting..."; exit 130' INT
-
-# Reconstruct OPTIONS array from exported variables
 declare -A OPTIONS
 for key in passwordless_sudoer fail2ban_vpn_bypass sharkvpn webserver apache_domains certbot phpmyadmin roundcube wp_cli pyenv_python podman lazydocker portainer gitea gitea_runner docker_mailserver n8n selenium homeassistant grafana_otel; do
     var_name="OPTION_${key}"
     OPTIONS["$key"]="${!var_name}"
 done
-
-# helper functions
-# Email validation helper
 is_valid_email() {
     local e="$1"
     # empty check
@@ -91,8 +82,6 @@ is_valid_email() {
     echo "Error: Email format is invalid" >&2
     return 1
 }
-
-# FQDN validation helper
 is_valid_fqdn() {
     local fqdn="$1"
     # empty check
@@ -107,8 +96,13 @@ is_valid_fqdn() {
     fi
     return 0
 }
+print_status() {
+    local msg="$1"
+    local pad_width=50  # Adjust this to fit your longest message
+    printf "%-${pad_width}s" "$msg"
+}
 
-# require user input.
+# prompts first
 if [ "${OPTIONS[passwordless_sudoer]}" = "1" ]; then
   SUDO_SECRET=$(prompt_with_getinput "Set SUDO protection secret" "" 10 "dotted" "true" "true" "false")
   status=$?
@@ -117,8 +111,6 @@ if [ "${OPTIONS[passwordless_sudoer]}" = "1" ]; then
     unset SUDO_SECRET
   fi
 fi
-
-# might require user input
 if [ "${OPTIONS[webserver]}" = "1" ]; then
   if [ "${OPTIONS[apache_domains]}" = "1" ]; then
     printf "It is extremely recommended to provide the main FQDN now\n(other programs if also are being installed will be configured in one go).\n"
@@ -149,8 +141,6 @@ if [ "${OPTIONS[webserver]}" = "1" ]; then
     fi
   fi
 fi
-
-# require user input.
 if [ "${OPTIONS[phpmyadmin]}" = "1" ]; then
   while true; do
     PHPMYADMIN_SECRET=$(prompt_with_getinput "Set phpMyAdmin database user password" "" 10 "dotted" "true" "true" "false")
@@ -162,8 +152,6 @@ if [ "${OPTIONS[phpmyadmin]}" = "1" ]; then
     break
   done
 fi
-
-# might require user input
 if [ "${OPTIONS[certbot]}" = "1" ]; then
   cert_bot_email_prompt(){
     while true; do
@@ -216,8 +204,6 @@ if [ "${OPTIONS[certbot]}" = "1" ]; then
     done
   fi
 fi
-
-# might require user input
 if [ "${OPTIONS[docker_mailserver]}" = "1" ]; then
   SKIP_DMS=false
   while true; do  
@@ -299,16 +285,7 @@ fi
 
 apt update && apt upgrade -y >>./log 2>&1
 
-# Helper function to print padded status message
-# Usage: print_status "message text"
-print_status() {
-    local msg="$1"
-    local pad_width=50  # Adjust this to fit your longest message
-    printf "%-${pad_width}s" "$msg"
-}
-
 # the actual install logic.
-# everything below does not require user input, thus all will be installed in the order intended.
 if [ -n "$SUDO_SECRET" ]; then
   if [ -x "/usr/local/bin/passwdls" ]; then
     print_status "Passwordless sudoer already installed. Skipping... "
@@ -321,7 +298,6 @@ if [ -n "$SUDO_SECRET" ]; then
     echo
   fi
 fi
-
 if [ "${OPTIONS[webserver]}" = "1" ]; then
   if dpkg -s apache2 php mariadb-server &>/dev/null; then
     print_status "Webserver (Apache, PHP, MariaDB) already installed. Skipping... "
@@ -341,7 +317,6 @@ if [ "${OPTIONS[webserver]}" = "1" ]; then
     echo
   fi
 fi
-
 if [ "${OPTIONS[apache_domains]}" = "1" ]; then
   print_status "Installing Apache domain management tools... "
   {
@@ -380,7 +355,6 @@ if [ "${OPTIONS[apache_domains]}" = "1" ]; then
   echo
 
 fi
-
 if [ "${OPTIONS[certbot]}" = "1" ]; then
   if dpkg -s certbot &>/dev/null; then
     print_status "Certbot already installed. Skipping... "
@@ -409,7 +383,6 @@ if [ "${OPTIONS[certbot]}" = "1" ]; then
     } >>./log 2>&1 &
   fi
 fi
-
 if [ "${OPTIONS[phpmyadmin]}" = "1" ]; then
     if [ -z "$PHPMYADMIN_SECRET" ]; then
       if dpkg -s phpmyadmin &>/dev/null; then
@@ -431,7 +404,6 @@ if [ "${OPTIONS[phpmyadmin]}" = "1" ]; then
       fi
     fi
 fi
-
 if [ "${OPTIONS[roundcube]}" = "1" ]; then
   if [ -d "/var/www/html/roundcube" ]; then
     print_status "Roundcube webmail already installed. Skipping... "
@@ -444,7 +416,6 @@ if [ "${OPTIONS[roundcube]}" = "1" ]; then
     echo
   fi
 fi
-
 if [ "${OPTIONS[wp_cli]}" = "1" ]; then
   if [ -x "/usr/local/bin/wp" ]; then
     print_status "WP-CLI already installed. Skipping... "
@@ -461,7 +432,6 @@ if [ "${OPTIONS[wp_cli]}" = "1" ]; then
     echo
   fi
 fi
-
 if [ "${OPTIONS[pyenv_python]}" = "1" ]; then
   if command -v pyenv &>/dev/null && pyenv versions | grep -q "3.13"; then
     print_status "Pyenv and Python 3.13 already installed. Skipping... "
@@ -490,7 +460,6 @@ if [ "${OPTIONS[pyenv_python]}" = "1" ]; then
     echo
   fi
 fi
-
 if [ "${OPTIONS[podman]}" = "1" ]; then
   if command -v podman &>/dev/null; then
     print_status "Podman already installed. Skipping... "
@@ -502,7 +471,6 @@ if [ "${OPTIONS[podman]}" = "1" ]; then
     echo
   fi
 fi
-
 if [ "${OPTIONS[lazydocker]}" = "1" ]; then
   if [ -x "/usr/bin/lazydocker" ]; then
     print_status "LazyDocker already installed. Skipping... "
@@ -517,7 +485,6 @@ if [ "${OPTIONS[lazydocker]}" = "1" ]; then
     echo
   fi
 fi
-
 if [ "${OPTIONS[portainer]}" = "1" ]; then
   if podman volume inspect portainer_data &>/dev/null && [ -f "/opt/compose/portainer/compose.yaml" ]; then
     print_status "Portainer already set up. Skipping... "
@@ -537,7 +504,6 @@ if [ "${OPTIONS[portainer]}" = "1" ]; then
     echo
   fi
 fi
-
 if [ "${OPTIONS[docker_mailserver]}" = "1" ]; then
   if [ -f "/opt/compose/mailserver/docker-compose.yml" ]; then
     print_status "Docker Mailserver already set up. Skipping... "
@@ -550,7 +516,6 @@ if [ "${OPTIONS[docker_mailserver]}" = "1" ]; then
     echo
   fi
 fi
-
 if [ "${OPTIONS[docker_mailserver]}" = "1" ] && [ "${OPTIONS[webserver]}" = "1" ] && [ "${OPTIONS[apache_domains]}" = "1" ]; then
   if [ -x "/usr/local/bin/a2wcrecalc-dms" ]; then
     print_status "DMS Apache integration tool already installed. Skipping... "
@@ -568,7 +533,6 @@ if [ "${OPTIONS[docker_mailserver]}" = "1" ] && [ "${OPTIONS[webserver]}" = "1" 
     echo
   fi
 fi
-
 if [ "${OPTIONS[gitea]}" = "1" ]; then
   if [ -f "/opt/compose/gitea/compose.yaml" ]; then
     print_status "Gitea already set up. Skipping... "
@@ -590,12 +554,10 @@ if [ "${OPTIONS[gitea]}" = "1" ]; then
     echo
   fi
 fi
-
 if [ "${OPTIONS[gitea_runner]}" = "1" ]; then
     echo "Installing Gitea Act Runner (dual user setup)..."
     # TODO: Implement Gitea runner installation logic
 fi
-
 if [ "${OPTIONS[n8n]}" = "1" ]; then
   if podman volume inspect n8n_data &>/dev/null && [ -f "/opt/compose/n8n/compose.yaml" ]; then
     print_status "n8n already set up. Skipping... "
@@ -615,20 +577,16 @@ if [ "${OPTIONS[n8n]}" = "1" ]; then
     echo
   fi
 fi
-
 if [ "${OPTIONS[selenium]}" = "1" ]; then
     echo "Installing Selenium testing framework..."
     # TODO: Implement Selenium installation logic
 fi
-
 if [ "${OPTIONS[homeassistant]}" = "1" ]; then
     echo "Installing Home Assistant automation..."
     # TODO: Implement Home Assistant installation logic
 fi
-
 if [ "${OPTIONS[grafana_otel]}" = "1" ]; then
     echo "Installing Grafana with OpenTelemetry LGTM stack..."
     # TODO: Implement Grafana + OTEL installation logic
 fi
-
 echo -e "\nSetup complete!"
