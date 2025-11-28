@@ -176,54 +176,12 @@ if [ "${OPTIONS[webserver]}" = "1" ]; then
       REINSTALL_WEBSERVER="n"
     fi
     if [[ "$REINSTALL_WEBSERVER" =~ ^[Yy]$ ]]; then
-      # yes => ask the existing prompt(s)
-      if [ "${OPTIONS[apache_domains]}" = "1" ]; then
-        printf "It is extremely recommended to provide the main FQDN now\n(other programs if also are being installed will be configured in one go).\n"
-        ADD_FQDN_NOW=$(prompt_with_getinput "Provide the main FQDN now? [y/n]" "n" 10)
-        if [ -z "$ADD_FQDN_NOW" ]; then
-          ADD_FQDN_NOW="n"
-        fi
-        if [ "$ADD_FQDN_NOW" = "y" ] || [ "$ADD_FQDN_NOW" = "Y" ]; then
-          while true; do
-            FQDN=$(prompt_with_getinput "main FQDN" "" 10 "visible" "true" "true" "false")
-            status=$?
-            if [ $status -eq 200 ]; then
-              # user chose to skip
-              unset FQDN
-              break
-            fi
-              # already installed ?
-              if dpkg -s apache2 php mariadb-server &>/dev/null; then
-                # yes => ask if wants to re-install ?
-                REINSTALL_WEBSERVER=$(prompt_with_getinput "Webserver (Apache, PHP, MariaDB) already installed. Re-install webserver stack? [y/n]" "n" 10)
-                status=$?
-                if [ $status -eq 200 ] || [ -z "$REINSTALL_WEBSERVER" ]; then
-                  REINSTALL_WEBSERVER="n"
-                fi
-                if [[ "$REINSTALL_WEBSERVER" =~ ^[Yy]$ ]]; then
-                  # yes => ask the existing prompt(s)
-                  prompt_main_fqdn_if_needed
-                fi
-              else
-                # not installed => proceed normally to asking the existing prompt(s)
-                prompt_main_fqdn_if_needed
-              fi
-            unset FQDN
-            break
-          done
-          # Validate FQDN existence
-          if [ -z "$FQDN" ]; then
-              echo "Error: FQDN can not be empty" >&2
-              continue
-          fi
-          if [[ ! "$FQDN" =~ ^[a-zA-Z0-9]([a-zA-Z0-9-]*[a-zA-Z0-9])?(\.[a-zA-Z0-9]([a-zA-Z0-9-]*[a-zA-Z0-9])?)*$ ]]; then
-              echo "Error: Invalid FQDN format: $FQDN" >&2
-              continue
-          fi
-          break
-        fi
-      fi
+      # on reinstall, reuse shared FQDN prompt logic when apache_domains is enabled
+      prompt_main_fqdn_if_needed
     fi
+  else
+    # first-time install: always offer the shared FQDN prompt when apache_domains is enabled
+    prompt_main_fqdn_if_needed
   fi
 fi
 if [ "${OPTIONS[phpmyadmin]}" = "1" ]; then
@@ -630,9 +588,10 @@ if [ "${OPTIONS[pyenv_python]}" = "1" ]; then
   if sudo -u user bash -lc '
     export PYENV_ROOT="$HOME/.pyenv"
     [[ -d "$PYENV_ROOT/bin" ]] && export PATH="$PYENV_ROOT/bin:$PATH"
-    eval "$(pyenv init - bash)" 2>/dev/null || true
+    command -v pyenv >/dev/null 2>&1 || exit 1
+    eval "$(pyenv init - bash)" >/dev/null 2>&1 || true
     pyenv versions 2>/dev/null | grep -q "3\.13"
-  ' ; then
+  '; then
     print_status "Pyenv and Python 3.13 already installed. Skipping... "
     echo
   else
