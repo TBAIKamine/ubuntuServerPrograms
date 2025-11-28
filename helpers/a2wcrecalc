@@ -52,7 +52,7 @@ for config_file in "$CONFIG_DIR"/*.conf; do
                 fi
             fi
         done
-    done
+    fi
 done
 
 # Output directory for new config files
@@ -91,7 +91,6 @@ for wildcard in "${wildcard_servers[@]}"; do
         if [ -n "$ssl_blocks" ]; then
             config_content="${config_content}<IfModule mod_ssl.c>\n${ssl_blocks}</IfModule>\n"
         fi
-    fi
     fi
 
     # Save the file as ${wildcard}.conf
