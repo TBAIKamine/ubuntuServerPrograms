@@ -210,7 +210,7 @@ if [ "${OPTIONS[webserver]}" = "1" ]; then
               fi
             unset FQDN
             break
-          fi
+          done
           # Validate FQDN existence
           if [ -z "$FQDN" ]; then
               echo "Error: FQDN can not be empty" >&2
