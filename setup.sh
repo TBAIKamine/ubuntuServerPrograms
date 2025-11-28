@@ -318,42 +318,51 @@ if [ "${OPTIONS[webserver]}" = "1" ]; then
   fi
 fi
 if [ "${OPTIONS[apache_domains]}" = "1" ]; then
-  print_status "Installing Apache domain management tools... "
-  {
-    # below are few command utilities to help with domain management
+  # If all helper commands exist and WAN_IP is already set, skip installation
+  if command -v a2sitemng >/dev/null 2>&1 && \
+     command -v fqdncredmgr >/dev/null 2>&1 && \
+     command -v fqdnmgr >/dev/null 2>&1 && \
+     command -v a2wcrecalc >/dev/null 2>&1 && \
+     [ -n "$WAN_IP" ]; then
+    print_status "Apache domain management tools already installed. Skipping... "
+    echo
+  else
+    print_status "Installing Apache domain management tools... "
+    {
+      # below are few command utilities to help with domain management
 
-    # apache2 config generator
-    cp $ABS_PATH/helpers/a2sitemng /usr/local/bin/a2sitemng
-    chmod +x /usr/local/bin/a2sitemng
-    chown root:root /usr/local/bin/a2sitemng
-    chmod 550 /usr/local/bin/a2sitemng
-    # credentials manager
-    cp $ABS_PATH/helpers/fqdncredmgr /usr/local/bin/fqdncredmgr
-    chmod +x /usr/local/bin/fqdncredmgr
-    chown root:root /usr/local/bin/fqdncredmgr
-    chmod 550 /usr/local/bin/fqdncredmgr
-    # DNS setter and domain purchaser helper
-    cp $ABS_PATH/helpers/fqdnmgr /usr/local/bin/fqdnmgr
-    chmod +x /usr/local/bin/fqdnmgr
-    chown root:root /usr/local/bin/fqdnmgr
-    chmod 550 /usr/local/bin/fqdnmgr
+      # apache2 config generator
+      cp $ABS_PATH/helpers/a2sitemng /usr/local/bin/a2sitemng
+      chmod +x /usr/local/bin/a2sitemng
+      chown root:root /usr/local/bin/a2sitemng
+      chmod 550 /usr/local/bin/a2sitemng
+      # credentials manager
+      cp $ABS_PATH/helpers/fqdncredmgr /usr/local/bin/fqdncredmgr
+      chmod +x /usr/local/bin/fqdncredmgr
+      chown root:root /usr/local/bin/fqdncredmgr
+      chmod 550 /usr/local/bin/fqdncredmgr
+      # DNS setter and domain purchaser helper
+      cp $ABS_PATH/helpers/fqdnmgr /usr/local/bin/fqdnmgr
+      chmod +x /usr/local/bin/fqdnmgr
+      chown root:root /usr/local/bin/fqdnmgr
+      chmod 550 /usr/local/bin/fqdnmgr
 
-    cp $ABS_PATH/helpers/a2wcrecalc /usr/local/bin/a2wcrecalc
-    chmod +x /usr/local/bin/a2wcrecalc
-    chown root:root /usr/local/bin/a2wcrecalc
-    chmod 550 /usr/local/bin/a2wcrecalc
-    hash -r
+      cp $ABS_PATH/helpers/a2wcrecalc /usr/local/bin/a2wcrecalc
+      chmod +x /usr/local/bin/a2wcrecalc
+      chown root:root /usr/local/bin/a2wcrecalc
+      chmod 550 /usr/local/bin/a2wcrecalc
+      hash -r
 
-    apt install whois -y
-    WAN_IP=$(curl -s https://api.ipify.org 2>/dev/null)
-    if [ -n "$WAN_IP" ]; then
-      echo "export WAN_IP=$WAN_IP" >> /home/user/.bashrc
-      export WAN_IP=$WAN_IP
-    fi
-  } >>./log 2>&1 &
-  bash ./helpers/progress.sh $!
-  echo
-
+      apt install whois -y
+      WAN_IP=$(curl -s https://api.ipify.org 2>/dev/null)
+      if [ -n "$WAN_IP" ]; then
+        echo "export WAN_IP=$WAN_IP" >> /home/user/.bashrc
+        export WAN_IP=$WAN_IP
+      fi
+    } >>./log 2>&1 &
+    bash ./helpers/progress.sh $!
+    echo
+  fi
 fi
 if [ "${OPTIONS[certbot]}" = "1" ]; then
   if dpkg -s certbot &>/dev/null; then
@@ -405,7 +414,7 @@ if [ "${OPTIONS[phpmyadmin]}" = "1" ]; then
     fi
 fi
 if [ "${OPTIONS[roundcube]}" = "1" ]; then
-  if [ -d "/var/www/html/roundcube" ]; then
+  if [ -d "/var/www/mail" ]; then
     print_status "Roundcube webmail already installed. Skipping... "
     echo
   else
@@ -505,7 +514,7 @@ if [ "${OPTIONS[portainer]}" = "1" ]; then
   fi
 fi
 if [ "${OPTIONS[docker_mailserver]}" = "1" ]; then
-  if [ -f "/opt/compose/mailserver/docker-compose.yml" ]; then
+  if [ -f "/opt/compose/mailserver/docker-compose.yaml" ]; then
     print_status "Docker Mailserver already set up. Skipping... "
     echo
   else
