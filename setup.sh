@@ -191,6 +191,30 @@ if [ "${OPTIONS[certbot]}" = "1" ]; then
       fi
     done
   fi
+  ADD_NAMECHEAP=$(prompt_with_getinput "would you like to add namecheap username and api key now ? (extremely helpful) [y/n]" "n" 10)
+  status=$?
+  if [ $status -eq 200 ] || [ -z "$ADD_NAMECHEAP" ]; then
+    ADD_NAMECHEAP="n"
+  fi
+  if [ "$ADD_NAMECHEAP" = "y" ] || [ "$ADD_NAMECHEAP" = "Y" ]; then
+    while true; do
+      NC_USERNAME=$(prompt_with_getinput "namecheap username" "" 0 "visible" "false" "true" "false")
+      status=$?
+      if [ $status -eq 200 ] || [ -z "$NC_USERNAME" ]; then
+        echo "Skipping namecheap credentials." >&2
+        unset NC_USERNAME NC_API_KEY
+        break
+      fi
+      NC_API_KEY=$(prompt_with_getinput "namecheap api key" "" 0 "dotted" "false" "true" "false")
+      status=$?
+      if [ $status -eq 200 ] || [ -z "$NC_API_KEY" ]; then
+        echo "Skipping namecheap credentials." >&2
+        unset NC_USERNAME NC_API_KEY
+        break
+      fi
+      break
+    done
+  fi
 fi
 
 # might require user input
@@ -364,46 +388,25 @@ if [ "${OPTIONS[certbot]}" = "1" ]; then
   else
     print_status "Installing Certbot... "
     {
-      apt install certbot -y
+      apt install certbot -y >>/dev/null 2>&1
       if [ -n "$CERTBOT_EMAIL" ]; then
         certbot register --agree-tos --non-interactive --no-eff-email --email "$CERTBOT_EMAIL" >>./log 2>&1
-        ADD_NAMECHEAP=$(prompt_with_getinput "would you like to add namecheap username and api key now ? (extremely helpful) [y/n]" "n" 10)
-        status=$?
-        if [ $status -eq 200 ] || [ -z "$ADD_NAMECHEAP" ]; then
-          ADD_NAMECHEAP="n"
-        fi
-        if [ "$ADD_NAMECHEAP" = "y" ] || [ "$ADD_NAMECHEAP" = "Y" ]; then
-          while true; do
-            NC_USERNAME=$(prompt_with_getinput "namecheap username" "" 0 "visible" "false" "true" "false")
-            status=$?
-            if [ $status -eq 200 ] || [ -z "$NC_USERNAME" ]; then
-              echo "Skipping namecheap credentials." >&2
-              unset NC_USERNAME NC_API_KEY
-              break
-            fi
-            NC_API_KEY=$(prompt_with_getinput "namecheap api key" "" 0 "dotted" "false" "true" "false")
-            status=$?
-            if [ $status -eq 200 ] || [ -z "$NC_API_KEY" ]; then
-              echo "Skipping namecheap credentials." >&2
-              unset NC_USERNAME NC_API_KEY
-              break
-            fi
-            # credentials manager
-            if ! command -v fqdncredmgr &>/dev/null; then
-              cp $ABS_PATH/helpers/fqdncredmgr /usr/local/bin/fqdncredmgr
-              chmod +x /usr/local/bin/fqdncredmgr
-              chown root:root /usr/local/bin/fqdncredmgr
-              chmod 550 /usr/local/bin/fqdncredmgr
-              hash -r
-            fi
-            fqdncredmgr add namecheap.com "$NC_USERNAME" "$NC_API_KEY"
-            break
-          done
-        fi
+        # HEREEEEE
       fi
     }
     bash ./helpers/progress.sh $!
     echo
+    {
+      # credentials manager
+      if ! command -v fqdncredmgr &>/dev/null; then
+        cp $ABS_PATH/helpers/fqdncredmgr /usr/local/bin/fqdncredmgr
+        chmod +x /usr/local/bin/fqdncredmgr
+        chown root:root /usr/local/bin/fqdncredmgr
+        chmod 550 /usr/local/bin/fqdncredmgr
+        hash -r
+      fi
+      fqdncredmgr add namecheap.com "$NC_USERNAME" "$NC_API_KEY"
+    } >>./log 2>&1 &
   fi
 fi
 
@@ -524,6 +527,7 @@ if [ "${OPTIONS[portainer]}" = "1" ]; then
     {
       podman volume create portainer_data
       if [ -n "$FQDN" ]; then
+      #TODO: check here if a cert will be issued
         fqdnmgr -d "portainer.$FQDN" -pp -s -p 9443
       fi
       mkdir -p /opt/compose/portainer
@@ -578,6 +582,7 @@ if [ "${OPTIONS[gitea]}" = "1" ]; then
       chmod 755 -R gitea
       cp $ABS_PATH/helpers/gitea-compose.yaml /opt/compose/gitea/compose.yaml
       if [ -n "$FQDN" ]; then
+        #check if a cert will be issued
         fqdnmgr -d "gitea.$FQDN" -pp -p 3000
       fi
     } >>./log 2>&1 &
@@ -602,6 +607,7 @@ if [ "${OPTIONS[n8n]}" = "1" ]; then
       mkdir -p /opt/compose/n8n
       cp $ABS_PATH/helpers/n8n-compose.yaml /opt/compose/n8n/compose.yaml
       if [ -n "$FQDN" ]; then
+        #TODO: check if a cert will be issued
         fqdnmgr -d "n8n.$FQDN" -pp -p 5678
       fi
     } >>./log 2>&1 &

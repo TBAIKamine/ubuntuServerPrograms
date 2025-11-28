@@ -26,7 +26,7 @@ if grep -q "^\$config\['username_domain_forced'\]" "$RC_CONFIG_FILE"; then
 else
   echo "\$config['username_domain_forced'] = true;" >> "$RC_CONFIG_FILE"
 fi
-#TODO
+#TODO: check if at least 1 website exists then configure mail.* with it (check if a cert will be issued)
 if [ -n "$FQDN" ]; then
 	a2sitemng --swc -d "mail.*"
 fi
