@@ -561,7 +561,7 @@ if [ "${OPTIONS[certbot]}" = "1" ]; then
   fi
 fi
 if [ "${OPTIONS[phpmyadmin]}" = "1" ]; then
-    if [ -z "$PHPMYADMIN_SECRET" ]; then
+    if [ -n "$PHPMYADMIN_SECRET" ]; then
       if dpkg -s phpmyadmin &>/dev/null; then
         print_status "phpMyAdmin already installed. Skipping... "
         echo
@@ -610,7 +610,8 @@ if [ "${OPTIONS[wp_cli]}" = "1" ]; then
   fi
 fi
 if [ "${OPTIONS[pyenv_python]}" = "1" ]; then
-  if command -v pyenv &>/dev/null && pyenv versions | grep -q "3.13"; then
+  # Check pyenv/Python from the perspective of the normal user, not root
+  if sudo -u user bash -lc 'command -v pyenv >/dev/null 2>&1 && pyenv versions | grep -q "3.13"'; then
     print_status "Pyenv and Python 3.13 already installed. Skipping... "
     echo
   else
@@ -622,7 +623,7 @@ if [ "${OPTIONS[pyenv_python]}" = "1" ]; then
       sudo -u user bash -c 'curl -fsSL https://pyenv.run | bash'
       cat ./helpers/pyenv_profile.txt >> /home/user/.bashrc
       echo "export PYENV_ROOT=\"/home/user/.pyenv\"" >> /home/user/.bashrc
-      [[ -d $PYENV_ROOT/bin ]] && echo "export PATH=\"$PYENV_ROOT/bin:\$PATH\"" >> /home/user/.bashrc
+      [[ -d /home/user/.pyenv/bin ]] && echo "export PATH=\"$PYENV_ROOT/bin:\$PATH\"" >> /home/user/.bashrc
       hash -r #refresh environment
       sudo -u user bash -l -c '
           export PYENV_ROOT="$HOME/.pyenv"
@@ -682,7 +683,7 @@ if [ "${OPTIONS[portainer]}" = "1" ]; then
   fi
 fi
 if [ "${OPTIONS[docker_mailserver]}" = "1" ]; then
-  if [ -f "/opt/compose/mailserver/docker-compose.yaml" ]; then
+  if [ -f "/opt/compose/docker-mailserver/docker-compose.yaml" ]; then
     print_status "Docker Mailserver already set up. Skipping... "
     echo
   else
