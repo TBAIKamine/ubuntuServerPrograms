@@ -101,56 +101,165 @@ print_status() {
     local pad_width=50  # Adjust this to fit your longest message
     printf "%-${pad_width}s" "$msg"
 }
+prompt_main_fqdn_if_needed() {
+  if [ "${OPTIONS[apache_domains]}" != "1" ]; then
+    return 0
+  fi
+  printf "It is extremely recommended to provide the main FQDN now\n(other programs if also are being installed will be configured in one go).\n"
+  ADD_FQDN_NOW=$(prompt_with_getinput "Provide the main FQDN now? [y/n]" "n" 10)
+  local status=$?
+  if [ $status -eq 200 ] || [ -z "$ADD_FQDN_NOW" ]; then
+    ADD_FQDN_NOW="n"
+  fi
+  if [ "$ADD_FQDN_NOW" = "y" ] || [ "$ADD_FQDN_NOW" = "Y" ]; then
+    while true; do
+      FQDN=$(prompt_with_getinput "main FQDN" "" 10 "visible" "true" "true" "false")
+      status=$?
+      if [ $status -eq 200 ]; then
+        # user chose to skip
+        unset FQDN
+        break
+      fi
+      # Validate FQDN existence
+      if [ -z "$FQDN" ]; then
+          echo "Error: FQDN can not be empty" >&2
+          continue
+      fi
+      if [[ ! "$FQDN" =~ ^[a-zA-Z0-9]([a-zA-Z0-9-]*[a-zA-Z0-9])?(\.[a-zA-Z0-9]([a-zA-Z0-9-]*[a-zA-Z0-9])?)*$ ]]; then
+          echo "Error: Invalid FQDN format: $FQDN" >&2
+          continue
+      fi
+      break
+    done
+  fi
+}
 
 # prompts first
 if [ "${OPTIONS[passwordless_sudoer]}" = "1" ]; then
-  SUDO_SECRET=$(prompt_with_getinput "Set SUDO protection secret" "" 10 "dotted" "true" "true" "false")
-  status=$?
-  if [ $status -eq 200 ] || [ -z "$SUDO_SECRET" ]; then
-    echo "Skipping sudo secret setup as requested."
-    unset SUDO_SECRET
+  # already installed ?
+  if [ -x "/usr/local/bin/passwdls" ]; then
+    # yes => ask if wants to re-install ?
+    REINSTALL_SUDO=$(prompt_with_getinput "Passwordless sudoer already installed. Re-install and update secret? [y/n]" "n" 10)
+    status=$?
+    if [ $status -eq 200 ] || [ -z "$REINSTALL_SUDO" ]; then
+      REINSTALL_SUDO="n"
+    fi
+    if [[ "$REINSTALL_SUDO" =~ ^[Yy]$ ]]; then
+      # yes => ask for the needed password
+      SUDO_SECRET=$(prompt_with_getinput "Set SUDO protection secret" "" 10 "dotted" "true" "true" "false")
+      status=$?
+      if [ $status -eq 200 ] || [ -z "$SUDO_SECRET" ]; then
+        echo "Skipping sudo secret setup as requested."
+        unset SUDO_SECRET
+      fi
+    else
+      # no => skip
+      unset SUDO_SECRET
+    fi
+  else
+    # not installed => proceed normally to asking the needed password
+    SUDO_SECRET=$(prompt_with_getinput "Set SUDO protection secret" "" 10 "dotted" "true" "true" "false")
+    status=$?
+    if [ $status -eq 200 ] || [ -z "$SUDO_SECRET" ]; then
+      echo "Skipping sudo secret setup as requested."
+      unset SUDO_SECRET
+    fi
   fi
 fi
 if [ "${OPTIONS[webserver]}" = "1" ]; then
-  if [ "${OPTIONS[apache_domains]}" = "1" ]; then
-    printf "It is extremely recommended to provide the main FQDN now\n(other programs if also are being installed will be configured in one go).\n"
-    ADD_FQDN_NOW=$(prompt_with_getinput "Provide the main FQDN now? [y/n]" "n" 10)
-    if [ -z "$ADD_FQDN_NOW" ]; then
-      ADD_FQDN_NOW="n"
+  # already installed ?
+  if dpkg -s apache2 php mariadb-server &>/dev/null; then
+    # yes => ask if wants to re-install ?
+    REINSTALL_WEBSERVER=$(prompt_with_getinput "Webserver (Apache, PHP, MariaDB) already installed. Re-install webserver stack? [y/n]" "n" 10)
+    status=$?
+    if [ $status -eq 200 ] || [ -z "$REINSTALL_WEBSERVER" ]; then
+      REINSTALL_WEBSERVER="n"
     fi
-    if [ "$ADD_FQDN_NOW" = "y" ] || [ "$ADD_FQDN_NOW" = "Y" ]; then
-      while true; do
-        FQDN=$(prompt_with_getinput "main FQDN" "" 10 "visible" "true" "true" "false")
-        status=$?
-        if [ $status -eq 200 ]; then
-          # user chose to skip
-          unset FQDN
+    if [[ "$REINSTALL_WEBSERVER" =~ ^[Yy]$ ]]; then
+      # yes => ask the existing prompt(s)
+      if [ "${OPTIONS[apache_domains]}" = "1" ]; then
+        printf "It is extremely recommended to provide the main FQDN now\n(other programs if also are being installed will be configured in one go).\n"
+        ADD_FQDN_NOW=$(prompt_with_getinput "Provide the main FQDN now? [y/n]" "n" 10)
+        if [ -z "$ADD_FQDN_NOW" ]; then
+          ADD_FQDN_NOW="n"
+        fi
+        if [ "$ADD_FQDN_NOW" = "y" ] || [ "$ADD_FQDN_NOW" = "Y" ]; then
+          while true; do
+            FQDN=$(prompt_with_getinput "main FQDN" "" 10 "visible" "true" "true" "false")
+            status=$?
+            if [ $status -eq 200 ]; then
+              # user chose to skip
+              unset FQDN
+              break
+            fi
+              # already installed ?
+              if dpkg -s apache2 php mariadb-server &>/dev/null; then
+                # yes => ask if wants to re-install ?
+                REINSTALL_WEBSERVER=$(prompt_with_getinput "Webserver (Apache, PHP, MariaDB) already installed. Re-install webserver stack? [y/n]" "n" 10)
+                status=$?
+                if [ $status -eq 200 ] || [ -z "$REINSTALL_WEBSERVER" ]; then
+                  REINSTALL_WEBSERVER="n"
+                fi
+                if [[ "$REINSTALL_WEBSERVER" =~ ^[Yy]$ ]]; then
+                  # yes => ask the existing prompt(s)
+                  prompt_main_fqdn_if_needed
+                fi
+              else
+                # not installed => proceed normally to asking the existing prompt(s)
+                prompt_main_fqdn_if_needed
+              fi
+            unset FQDN
+            break
+          fi
+          # Validate FQDN existence
+          if [ -z "$FQDN" ]; then
+              echo "Error: FQDN can not be empty" >&2
+              continue
+          fi
+          if [[ ! "$FQDN" =~ ^[a-zA-Z0-9]([a-zA-Z0-9-]*[a-zA-Z0-9])?(\.[a-zA-Z0-9]([a-zA-Z0-9-]*[a-zA-Z0-9])?)*$ ]]; then
+              echo "Error: Invalid FQDN format: $FQDN" >&2
+              continue
+          fi
           break
-        fi
-        # Validate FQDN existence
-        if [ -z "$FQDN" ]; then
-            echo "Error: FQDN can not be empty" >&2
-            continue
-        fi
-        if [[ ! "$FQDN" =~ ^[a-zA-Z0-9]([a-zA-Z0-9-]*[a-zA-Z0-9])?(\.[a-zA-Z0-9]([a-zA-Z0-9-]*[a-zA-Z0-9])?)*$ ]]; then
-            echo "Error: Invalid FQDN format: $FQDN" >&2
-            continue
-        fi
-        break
-      done
+        done
+      fi
     fi
   fi
 fi
 if [ "${OPTIONS[phpmyadmin]}" = "1" ]; then
-  while true; do
-    PHPMYADMIN_SECRET=$(prompt_with_getinput "Set phpMyAdmin database user password" "" 10 "dotted" "true" "true" "false")
+  # already installed ?
+  if dpkg -s phpmyadmin &>/dev/null; then
+    # yes => ask if wants to re-install ?
+    REINSTALL_PMA=$(prompt_with_getinput "phpMyAdmin already installed. Re-install and reconfigure DB user password? [y/n]" "n" 10)
     status=$?
-    if [ $status -eq 200 ] || [ -z "$PHPMYADMIN_SECRET" ]; then
-      unset PHPMYADMIN_SECRET
-      break
+    if [ $status -eq 200 ] || [ -z "$REINSTALL_PMA" ]; then
+      REINSTALL_PMA="n"
     fi
-    break
-  done
+    if [[ "$REINSTALL_PMA" =~ ^[Yy]$ ]]; then
+      while true; do
+        PHPMYADMIN_SECRET=$(prompt_with_getinput "Set phpMyAdmin database user password" "" 10 "dotted" "true" "true" "false")
+        status=$?
+        if [ $status -eq 200 ] || [ -z "$PHPMYADMIN_SECRET" ]; then
+          unset PHPMYADMIN_SECRET
+          break
+        fi
+        break
+      done
+    else
+      unset PHPMYADMIN_SECRET
+    fi
+  else
+    # not installed => proceed normally to asking the needed password
+    while true; do
+      PHPMYADMIN_SECRET=$(prompt_with_getinput "Set phpMyAdmin database user password" "" 10 "dotted" "true" "true" "false")
+      status=$?
+      if [ $status -eq 200 ] || [ -z "$PHPMYADMIN_SECRET" ]; then
+        unset PHPMYADMIN_SECRET
+        break
+      fi
+      break
+    done
+  fi
 fi
 if [ "${OPTIONS[certbot]}" = "1" ]; then
   cert_bot_email_prompt(){
@@ -164,20 +273,50 @@ if [ "${OPTIONS[certbot]}" = "1" ]; then
       return 0
     done
   }
-  cert_bot_email_prompt
-  email_prompt_result=$?
-  if [ $email_prompt_result -eq 0 ]; then
-    while true; do
-      if ! is_valid_email "$CERTBOT_EMAIL"; then
-        echo "Please enter a valid email for certbot."
-        cert_bot_email_prompt
-        if [ $? -ne 0 ]; then
+  # already installed ?
+  if dpkg -s certbot &>/dev/null; then
+    # yes => ask if wants to re-install / re-register ?
+    REINSTALL_CERTBOT=$(prompt_with_getinput "Certbot already installed. Re-run registration and update email? [y/n]" "n" 10)
+    status=$?
+    if [ $status -eq 200 ] || [ -z "$REINSTALL_CERTBOT" ]; then
+      REINSTALL_CERTBOT="n"
+    fi
+    if [[ "$REINSTALL_CERTBOT" =~ ^[Yy]$ ]]; then
+      cert_bot_email_prompt
+      email_prompt_result=$?
+      if [ $email_prompt_result -eq 0 ]; then
+        while true; do
+          if ! is_valid_email "$CERTBOT_EMAIL"; then
+            echo "Please enter a valid email for certbot."
+            cert_bot_email_prompt
+            if [ $? -ne 0 ]; then
+              break
+            fi
+          else
+            break
+          fi
+        done
+      fi
+    else
+      unset CERTBOT_EMAIL
+    fi
+  else
+    # not installed => proceed normally to asking email
+    cert_bot_email_prompt
+    email_prompt_result=$?
+    if [ $email_prompt_result -eq 0 ]; then
+      while true; do
+        if ! is_valid_email "$CERTBOT_EMAIL"; then
+          echo "Please enter a valid email for certbot."
+          cert_bot_email_prompt
+          if [ $? -ne 0 ]; then
+            break
+          fi
+        else
           break
         fi
-      else
-        break
-      fi
-    done
+      done
+    fi
   fi
   ADD_NAMECHEAP=$(prompt_with_getinput "would you like to add namecheap username and api key now ? (extremely helpful) [y/n]" "n" 10)
   status=$?
@@ -205,82 +344,111 @@ if [ "${OPTIONS[certbot]}" = "1" ]; then
   fi
 fi
 if [ "${OPTIONS[docker_mailserver]}" = "1" ]; then
-  SKIP_DMS=false
-  while true; do  
-    printf "\rdocker mailserver requires a hostname at least, that or provide an email
+  # already set up ?
+  if [ -f "/opt/compose/mailserver/docker-compose.yaml" ]; then
+    # yes => ask if wants to re-install ?
+    REINSTALL_DMS=$(prompt_with_getinput "Docker Mailserver already set up. Re-install and reconfigure hostname/email? [y/n]" "n" 10)
+    status=$?
+    if [ $status -eq 200 ] || [ -z "$REINSTALL_DMS" ]; then
+      REINSTALL_DMS="n"
+    fi
+    SKIP_DMS=false
+    if [[ ! "$REINSTALL_DMS" =~ ^[Yy]$ ]]; then
+      SKIP_DMS=true
+    fi
+  else
+    # not installed => proceed to ask requirements
+    SKIP_DMS=false
+  fi
+
+  if [ "$SKIP_DMS" = false ]; then
+    while true; do  
+      printf "\rdocker mailserver requires a hostname at least, that or provide an email
         1- hostname (FQDN)
         2- email (recommended)
         provide a number or c to cancel\n"
 
-    DMS_CHOICE=$(prompt_with_getinput "Select 1 for hostname, 2 for email, or c to cancel" "c" 10)
-    status=$?
-    if [ $status -eq 200 ] || [ -z "$DMS_CHOICE" ]; then
-      # user chose to skip at the main choice prompt
-      SKIP_DMS=true
-      break
-    fi
-
-    if [ "$DMS_CHOICE" = "c" ] || [ "$DMS_CHOICE" = "C" ]; then
-      # explicit cancel treated as skip
-      SKIP_DMS=true
-      break
-    elif [ "$DMS_CHOICE" = "1" ]; then
-      # User chose hostname (FQDN)
-      while true; do
-        DMS_HOSTNAME=$(prompt_with_getinput "Enter FQDN for docker mailserver" "" 10 "visible" "false" "true" "false")
-        status=$?
-        if [ $status -eq 200 ]; then
-          # user chose to skip
-          SKIP_DMS=true
-          break 2
-        fi
-        if is_valid_fqdn "$DMS_HOSTNAME"; then
-          # Valid FQDN provided
-          break 2  # Break out of both loops
-        else
-          # Invalid FQDN; loop back unless user uses skip
-          echo "Error: Invalid FQDN format: $DMS_HOSTNAME" >&2
-        fi
-      done
-    elif [ "$DMS_CHOICE" = "2" ]; then
-      # User chose email
-      while true; do
-        # Check if certbot email was provided earlier
-        if [ -n "$CERTBOT_EMAIL" ]; then
-          USE_CERTBOT_EMAIL=$(prompt_with_getinput "Use the same previous email ($CERTBOT_EMAIL)? [y/n]" "y" 10)
+      DMS_CHOICE=$(prompt_with_getinput "Select 1 for hostname, 2 for email, or c to cancel" "c" 10)
+      status=$?
+      if [ $status -eq 200 ] || [ -z "$DMS_CHOICE" ]; then
+        # user chose to skip at the main choice prompt
+        SKIP_DMS=true
+        break
+      fi
+      if [ "$DMS_CHOICE" = "c" ] || [ "$DMS_CHOICE" = "C" ]; then
+        # explicit cancel treated as skip
+        SKIP_DMS=true
+        break
+      elif [ "$DMS_CHOICE" = "1" ]; then
+        # User chose hostname (FQDN)
+        while true; do
+          # If a main FQDN was provided earlier, ask whether to reuse it
+          if [ -n "$FQDN" ]; then
+            USE_EXISTING_FQDN=$(prompt_with_getinput "Use previously provided FQDN ($FQDN) for docker mailserver? [y/n]" "y" 10)
+            status=$?
+            if [ $status -eq 200 ]; then
+              # treat skip here as not using existing FQDN; continue to prompt for a new one
+              USE_EXISTING_FQDN="n"
+            fi
+            if [[ "$USE_EXISTING_FQDN" =~ ^[Yy]$ ]]; then
+              DMS_HOSTNAME="$FQDN"
+              break 2
+            fi
+          fi
+          DMS_HOSTNAME=$(prompt_with_getinput "Enter FQDN for docker mailserver" "" 10 "visible" "false" "true" "false")
           status=$?
           if [ $status -eq 200 ]; then
-            # treat skip here as not using existing email, continue to prompt
-            USE_CERTBOT_EMAIL="n"
+            # user chose to skip
+            SKIP_DMS=true
+            break 2
           fi
-          if [ "$USE_CERTBOT_EMAIL" = "y" ] || [ "$USE_CERTBOT_EMAIL" = "Y" ]; then
-            DMS_EMAIL="$CERTBOT_EMAIL"
+          if is_valid_fqdn "$DMS_HOSTNAME"; then
+            # Valid FQDN provided
             break 2  # Break out of both loops
+          else
+            # Invalid FQDN; loop back unless user uses skip
+            echo "Error: Invalid FQDN format: $DMS_HOSTNAME" >&2
           fi
-        fi
-
-        DMS_EMAIL_INPUT=$(prompt_with_getinput "Enter email for docker mailserver" "" 10 "visible" "false" "true" "false")
-        status=$?
-        if [ $status -eq 200 ]; then
-          # user chose to skip email entry
-          SKIP_DMS=true
-          break 2
-        fi
-        if is_valid_email "$DMS_EMAIL_INPUT"; then
-          # Valid email provided
-          DMS_EMAIL="$DMS_EMAIL_INPUT"
-          break 2  # Break out of both loops
-        else
-          # Invalid email; loop back unless user uses skip
-          echo "Error: Email format is invalid" >&2
-        fi
-      done
-    else
-      # Invalid choice; let user retry via loop, or use skip at prompt
-      echo "Error: Invalid choice. Please enter 1, 2, or c" >&2
-      # loop will re-run and user can use ESC to skip at the main choice prompt
-    fi
-  done
+        done
+      elif [ "$DMS_CHOICE" = "2" ]; then
+        # User chose email
+        while true; do
+          # Check if certbot email was provided earlier
+          if [ -n "$CERTBOT_EMAIL" ]; then
+            USE_CERTBOT_EMAIL=$(prompt_with_getinput "Use the same previous email ($CERTBOT_EMAIL)? [y/n]" "y" 10)
+            status=$?
+            if [ $status -eq 200 ]; then
+              # treat skip here as not using existing email, continue to prompt
+              USE_CERTBOT_EMAIL="n"
+            fi
+            if [ "$USE_CERTBOT_EMAIL" = "y" ] || [ "$USE_CERTBOT_EMAIL" = "Y" ]; then
+              DMS_EMAIL="$CERTBOT_EMAIL"
+              break 2  # Break out of both loops
+            fi
+          fi
+          DMS_EMAIL_INPUT=$(prompt_with_getinput "Enter email for docker mailserver" "" 10 "visible" "false" "true" "false")
+          status=$?
+          if [ $status -eq 200 ]; then
+            # user chose to skip email entry
+            SKIP_DMS=true
+            break 2
+          fi
+          if is_valid_email "$DMS_EMAIL_INPUT"; then
+            # Valid email provided
+            DMS_EMAIL="$DMS_EMAIL_INPUT"
+            break 2  # Break out of both loops
+          else
+            # Invalid email; loop back unless user uses skip
+            echo "Error: Email format is invalid" >&2
+          fi
+        done
+      else
+        # Invalid choice; let user retry via loop, or use skip at prompt
+        echo "Error: Invalid choice. Please enter 1, 2, or c" >&2
+        # loop will re-run and user can use ESC to skip at the main choice prompt
+      fi
+    done
+  fi
 fi
 
 apt update && apt upgrade -y >>./log 2>&1
