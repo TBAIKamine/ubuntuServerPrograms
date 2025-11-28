@@ -486,11 +486,11 @@ if [ "${OPTIONS[webserver]}" = "1" ]; then
   fi
 fi
 if [ "${OPTIONS[apache_domains]}" = "1" ]; then
-  # If all helper commands exist and WAN_IP is already set, skip installation
-  if command -v a2sitemng >/dev/null 2>&1 && \
+  # If all helper commands exist (from the perspective of user "user") and WAN_IP is already set, skip installation
+  if sudo -u user bash -lc 'command -v a2sitemng >/dev/null 2>&1 && \
      command -v fqdncredmgr >/dev/null 2>&1 && \
      command -v fqdnmgr >/dev/null 2>&1 && \
-     command -v a2wcrecalc >/dev/null 2>&1 && \
+     command -v a2wcrecalc >/dev/null 2>&1' && \
      [ -n "$WAN_IP" ]; then
     print_status "Apache domain management tools already installed. Skipping... "
     echo
