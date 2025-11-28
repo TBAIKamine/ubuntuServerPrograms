@@ -367,53 +367,41 @@ if [ "${OPTIONS[certbot]}" = "1" ]; then
       apt install certbot -y
       if [ -n "$CERTBOT_EMAIL" ]; then
         certbot register --agree-tos --non-interactive --no-eff-email --email "$CERTBOT_EMAIL" >>./log 2>&1
-        read -r -p "would you like to add namecheap username and api key now ? (extremely helpful) [y/n]: " ADD_NAMECHEAP
-        if [ $? -ne 0 ]; then
-          echo -e "\nCancelled." >&2
+        ADD_NAMECHEAP=$(prompt_with_getinput "would you like to add namecheap username and api key now ? (extremely helpful) [y/n]" "n" 10)
+        status=$?
+        if [ $status -eq 200 ] || [ -z "$ADD_NAMECHEAP" ]; then
           ADD_NAMECHEAP="n"
         fi
         if [ "$ADD_NAMECHEAP" = "y" ] || [ "$ADD_NAMECHEAP" = "Y" ]; then
           while true; do
-            read -r -p "namecheap username: " NC_USERNAME
-            if [ $? -ne 0 ]; then
-              echo -e "\nCancelled. Skipping namecheap credentials." >&2
+            NC_USERNAME=$(prompt_with_getinput "namecheap username" "" 0 "visible" "false" "true" "false")
+            status=$?
+            if [ $status -eq 200 ] || [ -z "$NC_USERNAME" ]; then
+              echo "Skipping namecheap credentials." >&2
               unset NC_USERNAME NC_API_KEY
               break
             fi
-            read -r -s -p "namecheap api key: " NC_API_KEY
-            read_status=$?
-            echo  # Add newline after password input
-            if [ $read_status -ne 0 ]; then
-              echo -e "\nCancelled. Skipping namecheap credentials." >&2
+            NC_API_KEY=$(prompt_with_getinput "namecheap api key" "" 0 "dotted" "false" "true" "false")
+            status=$?
+            if [ $status -eq 200 ] || [ -z "$NC_API_KEY" ]; then
+              echo "Skipping namecheap credentials." >&2
               unset NC_USERNAME NC_API_KEY
               break
             fi
-            # validate non empty, loop until valid or skip
-            if [ -z "$NC_USERNAME" ] || [ -z "$NC_API_KEY" ]; then
-              echo "Error: Namecheap username and API key cannot be empty." >&2
-              read -r -p "Do you want to skip adding namecheap credentials? [y/n]: " SKIP_NC
-              if [ $? -ne 0 ] || [ "$SKIP_NC" = "y" ] || [ "$SKIP_NC" = "Y" ]; then
-                unset NC_USERNAME NC_API_KEY
-                break
-              fi
-              # If user said no, loop back to prompt
-            else
-              # credentials manager
-              if ! command -v fqdncredmgr &>/dev/null; then
-                cp $ABS_PATH/helpers/fqdncredmgr /usr/local/bin/fqdncredmgr
-                chmod +x /usr/local/bin/fqdncredmgr
-                chown root:root /usr/local/bin/fqdncredmgr
-                chmod 550 /usr/local/bin/fqdncredmgr
-                hash -r
-              fi
-              fqdncredmgr add namecheap.com "$NC_USERNAME" "$NC_API_KEY"
-              break
+            # credentials manager
+            if ! command -v fqdncredmgr &>/dev/null; then
+              cp $ABS_PATH/helpers/fqdncredmgr /usr/local/bin/fqdncredmgr
+              chmod +x /usr/local/bin/fqdncredmgr
+              chown root:root /usr/local/bin/fqdncredmgr
+              chmod 550 /usr/local/bin/fqdncredmgr
+              hash -r
             fi
+            fqdncredmgr add namecheap.com "$NC_USERNAME" "$NC_API_KEY"
+            break
           done
         fi
-
       fi
-    } >>./log 2>&1 &
+    }
     bash ./helpers/progress.sh $!
     echo
   fi
