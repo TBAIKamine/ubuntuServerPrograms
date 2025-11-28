@@ -318,24 +318,41 @@ if [ "${OPTIONS[certbot]}" = "1" ]; then
       done
     fi
   fi
-  ADD_NAMECHEAP=$(prompt_with_getinput "would you like to add namecheap username and api key now ? (extremely helpful) [y/n]" "n" 10)
+  # Handle Namecheap credentials based on existing installation state
+  NAMECHEAP_INSTALLED=false
+  # Consider Namecheap installed if there is at least one namecheap.com row in creds.db
+  if [ -f "/etc/fqdncredmgr/creds.db" ] && command -v sqlite3 >/dev/null 2>&1; then
+    if sqlite3 /etc/fqdncredmgr/creds.db "SELECT 1 FROM creds WHERE provider='namecheap.com' LIMIT 1;" 2>/dev/null | grep -q 1; then
+      NAMECHEAP_INSTALLED=true
+    fi
+  fi
+
+  if [ "$NAMECHEAP_INSTALLED" = true ]; then
+    # Namecheap API already configured -> ask about re-install / update
+    ADD_NAMECHEAP=$(prompt_with_getinput "Namecheap API credentials already configured. Re-install / update them now? [y/n]" "n" 10)
+  else
+    # Namecheap not yet configured -> first-time setup prompt
+    ADD_NAMECHEAP=$(prompt_with_getinput "Would you like to add Namecheap username and API key now? (extremely helpful) [y/n]" "n" 10)
+  fi
+
   status=$?
   if [ $status -eq 200 ] || [ -z "$ADD_NAMECHEAP" ]; then
     ADD_NAMECHEAP="n"
   fi
+
   if [ "$ADD_NAMECHEAP" = "y" ] || [ "$ADD_NAMECHEAP" = "Y" ]; then
     while true; do
-      NC_USERNAME=$(prompt_with_getinput "namecheap username" "" 0 "visible" "false" "true" "false")
+      NC_USERNAME=$(prompt_with_getinput "Namecheap username" "" 0 "visible" "false" "true" "false")
       status=$?
       if [ $status -eq 200 ] || [ -z "$NC_USERNAME" ]; then
-        echo "Skipping namecheap credentials." >&2
+        echo "Skipping Namecheap credentials." >&2
         unset NC_USERNAME NC_API_KEY
         break
       fi
-      NC_API_KEY=$(prompt_with_getinput "namecheap api key" "" 0 "dotted" "false" "true" "false")
+      NC_API_KEY=$(prompt_with_getinput "Namecheap API key" "" 0 "dotted" "false" "true" "false")
       status=$?
       if [ $status -eq 200 ] || [ -z "$NC_API_KEY" ]; then
-        echo "Skipping namecheap credentials." >&2
+        echo "Skipping Namecheap credentials." >&2
         unset NC_USERNAME NC_API_KEY
         break
       fi
@@ -490,8 +507,7 @@ if [ "${OPTIONS[apache_domains]}" = "1" ]; then
   if sudo -u user bash -lc 'command -v a2sitemng >/dev/null 2>&1 && \
      command -v fqdncredmgr >/dev/null 2>&1 && \
      command -v fqdnmgr >/dev/null 2>&1 && \
-     command -v a2wcrecalc >/dev/null 2>&1' && \
-     [ -n "$WAN_IP" ]; then
+     command -v a2wcrecalc >/dev/null 2>&1'; then
     print_status "Apache domain management tools already installed. Skipping... "
     echo
   else
@@ -542,7 +558,6 @@ if [ "${OPTIONS[certbot]}" = "1" ]; then
       apt install certbot -y >>/dev/null 2>&1
       if [ -n "$CERTBOT_EMAIL" ]; then
         certbot register --agree-tos --non-interactive --no-eff-email --email "$CERTBOT_EMAIL" >>./log 2>&1
-        # HEREEEEE
       fi
     }
     bash ./helpers/progress.sh $!
@@ -556,7 +571,9 @@ if [ "${OPTIONS[certbot]}" = "1" ]; then
         chmod 550 /usr/local/bin/fqdncredmgr
         hash -r
       fi
-      fqdncredmgr add namecheap.com "$NC_USERNAME" "$NC_API_KEY"
+      if [ -n "$NC_USERNAME" ] && [ -n "$NC_API_KEY" ]; then
+        fqdncredmgr add namecheap.com "$NC_USERNAME" "$NC_API_KEY"
+      fi
     } >>./log 2>&1 &
   fi
 fi
@@ -611,7 +628,12 @@ if [ "${OPTIONS[wp_cli]}" = "1" ]; then
 fi
 if [ "${OPTIONS[pyenv_python]}" = "1" ]; then
   # Check pyenv/Python from the perspective of the normal user, not root
-  if sudo -u user bash -lc 'command -v pyenv >/dev/null 2>&1 && pyenv versions | grep -q "3.13"'; then
+  if sudo -u user bash -lc '
+    export PYENV_ROOT="$HOME/.pyenv"
+    [[ -d "$PYENV_ROOT/bin" ]] && export PATH="$PYENV_ROOT/bin:$PATH"
+    eval "$(pyenv init - bash)" 2>/dev/null || true
+    pyenv versions 2>/dev/null | grep -q "3\.13"
+  ' ; then
     print_status "Pyenv and Python 3.13 already installed. Skipping... "
     echo
   else
@@ -683,7 +705,7 @@ if [ "${OPTIONS[portainer]}" = "1" ]; then
   fi
 fi
 if [ "${OPTIONS[docker_mailserver]}" = "1" ]; then
-  if [ -f "/opt/compose/docker-mailserver/docker-compose.yaml" ]; then
+  if [ -f "/opt/compose/docker-mailserver/compose.yaml" ]; then
     print_status "Docker Mailserver already set up. Skipping... "
     echo
   else
