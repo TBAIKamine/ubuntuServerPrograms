@@ -221,7 +221,7 @@ if [ "${OPTIONS[webserver]}" = "1" ]; then
               continue
           fi
           break
-        done
+        fi
       fi
     fi
   fi
