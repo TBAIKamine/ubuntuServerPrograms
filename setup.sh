@@ -316,53 +316,53 @@ if [ "${OPTIONS[certbot]}" = "1" ]; then
           break
         fi
       done
-    fi
-  fi
-  # Handle Namecheap credentials based on existing installation state
-  NAMECHEAP_INSTALLED=false
-  # Consider Namecheap installed if there is at least one namecheap.com row in creds.db
-  if [ -f "/etc/fqdncredmgr/creds.db" ] && command -v sqlite3 >/dev/null 2>&1; then
-    if sqlite3 /etc/fqdncredmgr/creds.db "SELECT 1 FROM creds WHERE provider='namecheap.com' LIMIT 1;" 2>/dev/null | grep -q 1; then
-      NAMECHEAP_INSTALLED=true
-    fi
-  fi
-
-  if [ "$NAMECHEAP_INSTALLED" = true ]; then
-    # Namecheap API already configured -> ask about re-install / update
-    ADD_NAMECHEAP=$(prompt_with_getinput "Namecheap API credentials already configured. Re-install / update them now? [y/n]" "n" 10)
-  else
-    # Namecheap not yet configured -> first-time setup prompt
-    ADD_NAMECHEAP=$(prompt_with_getinput "Would you like to add Namecheap username and API key now? (extremely helpful) [y/n]" "n" 10)
-  fi
-
-  status=$?
-  if [ $status -eq 200 ] || [ -z "$ADD_NAMECHEAP" ]; then
-    ADD_NAMECHEAP="n"
-  fi
-
-  if [ "$ADD_NAMECHEAP" = "y" ] || [ "$ADD_NAMECHEAP" = "Y" ]; then
-    while true; do
-      NC_USERNAME=$(prompt_with_getinput "Namecheap username" "" 0 "visible" "false" "true" "false")
-      status=$?
-      if [ $status -eq 200 ] || [ -z "$NC_USERNAME" ]; then
-        echo "Skipping Namecheap credentials." >&2
-        unset NC_USERNAME NC_API_KEY
-        break
+      # Only handle Namecheap when certbot is actually being (re)registered
+      NAMECHEAP_INSTALLED=false
+      # Consider Namecheap installed if there is at least one namecheap.com row in creds.db
+      if [ -f "/etc/fqdncredmgr/creds.db" ] && command -v sqlite3 >/dev/null 2>&1; then
+        if sqlite3 /etc/fqdncredmgr/creds.db "SELECT 1 FROM creds WHERE provider='namecheap.com' LIMIT 1;" 2>/dev/null | grep -q 1; then
+          NAMECHEAP_INSTALLED=true
+        fi
       fi
-      NC_API_KEY=$(prompt_with_getinput "Namecheap API key" "" 0 "dotted" "false" "true" "false")
-      status=$?
-      if [ $status -eq 200 ] || [ -z "$NC_API_KEY" ]; then
-        echo "Skipping Namecheap credentials." >&2
-        unset NC_USERNAME NC_API_KEY
-        break
+
+      if [ "$NAMECHEAP_INSTALLED" = true ]; then
+        # Namecheap API already configured -> ask about re-install / update
+        ADD_NAMECHEAP=$(prompt_with_getinput "Namecheap API credentials already configured. Re-install / update them now? [y/n]" "n" 10)
+      else
+        # Namecheap not yet configured -> first-time setup prompt
+        ADD_NAMECHEAP=$(prompt_with_getinput "Would you like to add Namecheap username and API key now? (extremely helpful) [y/n]" "n" 10)
       fi
-      break
-    done
+
+      status=$?
+      if [ $status -eq 200 ] || [ -z "$ADD_NAMECHEAP" ]; then
+        ADD_NAMECHEAP="n"
+      fi
+
+      if [ "$ADD_NAMECHEAP" = "y" ] || [ "$ADD_NAMECHEAP" = "Y" ]; then
+        while true; do
+          NC_USERNAME=$(prompt_with_getinput "Namecheap username" "" 0 "visible" "false" "true" "false")
+          status=$?
+          if [ $status -eq 200 ] || [ -z "$NC_USERNAME" ]; then
+            echo "Skipping Namecheap credentials." >&2
+            unset NC_USERNAME NC_API_KEY
+            break
+          fi
+          NC_API_KEY=$(prompt_with_getinput "Namecheap API key" "" 0 "dotted" "false" "true" "false")
+          status=$?
+          if [ $status -eq 200 ] || [ -z "$NC_API_KEY" ]; then
+            echo "Skipping Namecheap credentials." >&2
+            unset NC_USERNAME NC_API_KEY
+            break
+          fi
+          break
+        done
+      fi
+    fi
   fi
 fi
 if [ "${OPTIONS[docker_mailserver]}" = "1" ]; then
   # already set up ?
-  if [ -f "/opt/compose/mailserver/docker-compose.yaml" ]; then
+  if [ -f "/opt/compose/docker-mailserver/compose.yaml" ]; then
     # yes => ask if wants to re-install ?
     REINSTALL_DMS=$(prompt_with_getinput "Docker Mailserver already set up. Re-install and reconfigure hostname/email? [y/n]" "n" 10)
     status=$?
@@ -377,7 +377,6 @@ if [ "${OPTIONS[docker_mailserver]}" = "1" ]; then
     # not installed => proceed to ask requirements
     SKIP_DMS=false
   fi
-
   if [ "$SKIP_DMS" = false ]; then
     while true; do  
       printf "\rdocker mailserver requires a hostname at least, that or provide an email
