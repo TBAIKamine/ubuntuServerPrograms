@@ -574,9 +574,9 @@ if [ "${OPTIONS[wp_cli]}" = "1" ]; then
   else
     print_status "Installing WP-CLI... "
     {
-      curl -O https://raw.githubusercontent.com/wp-cli/wp-cli/v2.8.1/utils/wp-cli-2.8.1.phar
-      chmod +x wp-cli-2.8.1.phar
-      mv wp-cli-2.8.1.phar /usr/local/bin/wp
+      curl -O https://raw.githubusercontent.com/wp-cli/builds/gh-pages/phar/wp-cli.phar
+      chmod +x wp-cli.phar
+      mv wp-cli.phar /usr/local/bin/wp
       chown user:user /usr/local/bin/wp
     } >>./log 2>&1 &
     bash ./helpers/progress.sh $!
@@ -652,7 +652,7 @@ if [ "${OPTIONS[portainer]}" = "1" ]; then
     {
       podman volume create portainer_data
       if [ -n "$FQDN" ]; then
-      #TODO: check here if a cert will be issued
+        #TODO: check here if a cert will be issued
         fqdnmgr -d "portainer.$FQDN" -pp -s -p 9443
       fi
       mkdir -p /opt/compose/portainer

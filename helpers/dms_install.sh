@@ -42,4 +42,4 @@ cp $ABS_PATH/postfix-main.cf $DMS_DIR/docker-data/dms/config/postfix-main.cf
 cp $ABS_PATH/user-patches.sh $DMS_DIR/docker-data/dms/config/user-patches.sh
 
 chown -R user:user $DMS_DIR/docker-data/dms/config/{postfix-main.cf,user-patches.sh}
-chmod -R 775 $DMS_DIR/docker-data/dms/config/{postfix-main.cf,user-patches.sh}
+chmod -R 555 $DMS_DIR/docker-data/dms/config/{postfix-main.cf,user-patches.sh}

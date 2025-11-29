@@ -14,8 +14,8 @@ PROVIDED_HASH=$(printf '%s' "$PROVIDED_SECRET" | tr -d '\r\n' | sha256sum | awk 
 
 # 5. Compare the hashes
 if [ "$PROVIDED_HASH" == "$EXPECTED_HASH" ] && [ -n "$PROVIDED_SECRET" ]; then
-  # If hashes match, execute the command passed as arguments to the script
-  exec "$@"
+  # If hashes match, run the requested command via sudo, preserving all flags/args
+  exec /usr/bin/sudo "$@"
 else
   # Failure: log the attempt and exit
   logger "Unauthorized sudo attempt on $USER from $SSH_CONNECTION"
