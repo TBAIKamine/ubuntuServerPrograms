@@ -1,0 +1,18 @@
+version: "3.8"
+services:
+  n8n:
+    image: docker.n8n.io/n8nio/n8n
+    container_name: n8n
+    restart: always
+    environment:
+      - GENERIC_TIMEZONE=$(timedatectl show --value --property=Timezone)
+      - TZ=$(timedatectl show --value --property=Timezone)
+      - N8N_ENFORCE_SETTINGS_FILE_PERMISSIONS=true
+    ports:
+      - "5678:5678"
+    volumes:
+      - n8n_data:/home/node/.n8n
+      - /etc/letsencrypt:/etc/letsencrypt
+      - ./docker-data/dms/config/99-sni.conf:/etc/dovecot/conf.d/99-sni.conf
+volumes:
+  n8n_data:

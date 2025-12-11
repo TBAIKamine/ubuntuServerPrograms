@@ -1,0 +1,996 @@
+#!/bin/bash
+
+# first helpers and dependencies
+ABS_PATH=$(dirname "$(realpath "$0")")
+
+# ============================================================
+# PRESEED SUPPORT FOR UNATTENDED FIRST-TIME INSTALLATION
+# ============================================================
+PRESEED_FILE="$ABS_PATH/preseed.conf"
+SETUP_PRESEED=false
+
+load_preseed() {
+  if [ -f "$PRESEED_FILE" ]; then
+    echo "Preseed file detected: $PRESEED_FILE"
+    
+    # Ask user if they want to use preseed values
+    echo "Use preseed configuration values? [y/n/e(xit)]"
+    read -t 10 -p "Choice [n]: " USE_PRESEED
+    if [ $? -gt 128 ]; then
+      # Timeout occurred
+      USE_PRESEED="n"
+      echo ""
+    fi
+    USE_PRESEED="${USE_PRESEED:-n}"
+    
+    if [[ "$USE_PRESEED" =~ ^[Ee]$ ]]; then
+      echo "Exiting as requested."
+      exit 0
+    fi
+    
+    if [[ ! "$USE_PRESEED" =~ ^[Yy]$ ]]; then
+      echo "Skipping preseed configuration."
+      return
+    fi
+    
+    # Source the preseed file to load all PRESEED_* variables
+    source "$PRESEED_FILE"
+    SETUP_PRESEED=true
+    
+    # Auto-derive DMS settings if not explicitly set
+    # If DMS_EMAIL is provided, assume choice 2; if DMS_HOSTNAME is provided, assume choice 1
+    if [ -n "${PRESEED_DMS_EMAIL:-}" ]; then
+      PRESEED_DMS_CHOICE="2"
+    elif [ -n "${PRESEED_DMS_HOSTNAME:-}" ]; then
+      PRESEED_DMS_CHOICE="1"
+    fi
+    
+    # If DMS choice is 1 and no hostname, use main FQDN
+    if [ "${PRESEED_DMS_CHOICE:-}" = "1" ] && [ -z "${PRESEED_DMS_HOSTNAME:-}" ] && [ -n "${PRESEED_FQDN:-}" ]; then
+      PRESEED_DMS_HOSTNAME="$PRESEED_FQDN"
+    fi
+    
+    # If DMS choice is 2 and no email, use certbot email
+    if [ "${PRESEED_DMS_CHOICE:-}" = "2" ] && [ -z "${PRESEED_DMS_EMAIL:-}" ] && [ -n "${PRESEED_CERTBOT_EMAIL:-}" ]; then
+      PRESEED_DMS_EMAIL="$PRESEED_CERTBOT_EMAIL"
+    fi
+    
+    echo "Preseed configuration loaded successfully."
+  fi
+}
+
+# Check if a component is already installed (used to determine if preseed applies)
+# Returns 0 if NOT installed (preseed can apply), 1 if installed (skip preseed)
+is_first_install() {
+  local component="$1"
+  case "$component" in
+    "passwordless_sudoer")
+      [ ! -x "/usr/local/bin/passwdls" ]
+      ;;
+    "webserver")
+      ! dpkg -s apache2 php mariadb-server &>/dev/null
+      ;;
+    "phpmyadmin")
+      ! dpkg -s phpmyadmin &>/dev/null
+      ;;
+    "certbot")
+      ! dpkg -s certbot &>/dev/null
+      ;;
+    "docker_mailserver")
+      [ ! -f "/opt/compose/docker-mailserver/compose.yaml" ]
+      ;;
+    "namecheap")
+      if [ -f "/etc/fqdntools/creds.db" ] && command -v sqlite3 >/dev/null 2>&1; then
+        ! sqlite3 /etc/fqdntools/creds.db "SELECT 1 FROM creds WHERE provider='namecheap.com' LIMIT 1;" 2>/dev/null | grep -q 1
+      else
+        return 0  # Not installed
+      fi
+      ;;
+    *)
+      return 0  # Default to first install
+      ;;
+  esac
+}
+
+# Load preseed configuration
+load_preseed
+prompt_with_getinput() {
+  local prompt_text="$1"
+  local default_val="${2-}"
+  local timeout_sec="${3-10}"
+  local visibility_mode="${4-visible}"
+  local require_confirm="${5-false}"
+  local show_confirmation_text="${6-false}"
+  local empty_flag="${7-true}"
+  local raw result status
+
+  raw=$(
+    set -o pipefail
+    (
+      # Source inside subshell to avoid leaking helper shell options into this script
+      source "$ABS_PATH/helpers/getinput.sh"
+      getInput "$prompt_text" "$default_val" "$timeout_sec" "$visibility_mode" "$require_confirm" "$show_confirmation_text" "$empty_flag"
+    )
+  )
+  status=$?
+  # 200 is special exit code from getinput meaning "user chose to skip"
+  if [ $status -eq 200 ]; then
+    return 200
+  fi
+  if [ $status -ne 0 ]; then
+    exit $status
+  fi
+
+  result=$(printf "%s\n" "$raw" | tail -n1)
+  result="${result//$'\r'/}"
+  printf "%s" "$result"
+}
+
+# init.sh
+if [ -d /etc/cryptsetup-keys.d ]; then
+  echo "Do you want to execute init.sh first? [y/n]: "
+  echo "it is extremely important and even essential for security however
+  you only need to run this once for the first time when you install ubuntu server."
+  EXECUTE_INIT=$(prompt_with_getinput "Run init.sh now? [y/n]" "y" 5)
+  if [ -z "$EXECUTE_INIT" ]; then
+    EXECUTE_INIT="y"
+  fi
+  if [[ "$EXECUTE_INIT" =~ ^[Yy]$ ]]; then
+    # Pass SETUP_PRESEED to indicate if preseed was used in setup.sh
+    # init.sh will independently ask if user wants preseed there too (only if SETUP_PRESEED=true)
+    PRESEED_FILE="$PRESEED_FILE" SETUP_PRESEED="$SETUP_PRESEED" ./init.sh
+    USER_CONT=$(prompt_with_getinput "Continue to tools install menu? [y/n]" "y" 10)
+    if [ -z "$USER_CONT" ]; then
+      USER_CONT="y"
+    fi
+    if [[ "$USER_CONT" =~ ^[Yy]$ ]]; then
+      clear
+    else
+      echo -e "\nExiting as requested."
+      exit 0
+    fi
+  fi
+fi
+
+# menu
+source "$ABS_PATH/helpers/menu.sh"
+main
+declare -A OPTIONS
+for key in passwordless_sudoer fail2ban_vpn_bypass sharkvpn webserver apache_domains certbot phpmyadmin roundcube wp_cli pyenv_python podman lazydocker portainer gitea gitea_runner docker_mailserver n8n selenium homeassistant grafana_otel; do
+    var_name="OPTION_${key}"
+    OPTIONS["$key"]="${!var_name}"
+done
+
+trap 'echo -e "\n\nInterrupted by user. Exiting..."; exit 130' INT
+is_valid_email() {
+    local e="$1"
+    # empty check
+    if [ -z "$e" ]; then
+        echo "Error: Email is required, as certbot is not registered yet" >&2
+        return 1
+    fi
+    # basic email regex (not full RFC 5322 but practical)
+    local re='^[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}$'
+    if [[ "$e" =~ $re ]]; then
+        return 0
+    fi
+    echo "Error: Email format is invalid" >&2
+    return 1
+}
+is_valid_fqdn() {
+    local fqdn="$1"
+    # empty check
+    if [ -z "$fqdn" ]; then
+        echo "Error: FQDN cannot be empty" >&2
+        return 1
+    fi
+    # FQDN format validation
+    if [[ ! "$fqdn" =~ ^[a-zA-Z0-9]([a-zA-Z0-9-]*[a-zA-Z0-9])?(\.[a-zA-Z0-9]([a-zA-Z0-9-]*[a-zA-Z0-9])?)*$ ]]; then
+        echo "Error: Invalid FQDN format: $fqdn" >&2
+        return 1
+    fi
+    return 0
+}
+print_status() {
+    local msg="$1"
+    local pad_width=50  # Adjust this to fit your longest message
+    printf "%-${pad_width}s" "$msg"
+}
+prompt_main_fqdn_if_needed() {
+  if [ "${OPTIONS[apache_domains]}" != "1" ]; then
+    return 0
+  fi
+  
+  # Check for preseed value first (only for first install)
+  if [ "$SETUP_PRESEED" = true ] && is_first_install "webserver" && [ -n "${PRESEED_FQDN:-}" ]; then
+    if is_valid_fqdn "$PRESEED_FQDN"; then
+      FQDN="$PRESEED_FQDN"
+      echo "Using preseeded FQDN: $FQDN"
+      return 0
+    else
+      echo "Warning: Preseeded FQDN is invalid, falling back to prompt"
+    fi
+  fi
+  
+  printf "It is extremely recommended to provide the main FQDN now\n(other programs if also are being installed will be configured in one go).\n"
+  ADD_FQDN_NOW=$(prompt_with_getinput "Provide the main FQDN now? [y/n]" "n" 10)
+  local status=$?
+  if [ $status -eq 200 ] || [ -z "$ADD_FQDN_NOW" ]; then
+    ADD_FQDN_NOW="n"
+  fi
+  if [ "$ADD_FQDN_NOW" = "y" ] || [ "$ADD_FQDN_NOW" = "Y" ]; then
+    while true; do
+      FQDN=$(prompt_with_getinput "main FQDN" "" 10 "visible" "true" "true" "false")
+      status=$?
+      if [ $status -eq 200 ]; then
+        # user chose to skip
+        unset FQDN
+        break
+      fi
+      # Validate FQDN existence
+      if [ -z "$FQDN" ]; then
+          echo "Error: FQDN can not be empty" >&2
+          continue
+      fi
+      if [[ ! "$FQDN" =~ ^[a-zA-Z0-9]([a-zA-Z0-9-]*[a-zA-Z0-9])?(\.[a-zA-Z0-9]([a-zA-Z0-9-]*[a-zA-Z0-9])?)*$ ]]; then
+          echo "Error: Invalid FQDN format: $FQDN" >&2
+          continue
+      fi
+      break
+    done
+  fi
+}
+get_wan_ip() {
+    # Check if WAN_IP is already set in environment
+    if [ -n "$WAN_IP" ]; then
+        export WAN_IP
+        return 0
+    fi
+    
+    # Try to read from /etc/environment
+    if [ -f /etc/environment ]; then
+        WAN_IP=$(grep -E "^WAN_IP=" /etc/environment 2>/dev/null | cut -d= -f2 | tr -d '"')
+        if [ -n "$WAN_IP" ]; then
+            export WAN_IP
+            return 0
+        fi
+    fi
+    
+    # Fetch WAN IP from external service
+    WAN_IP=$(curl -s ifconfig.me)
+    
+    if [ -z "$WAN_IP" ]; then
+        echo "Error: Failed to determine WAN IP" >&2
+        return 1
+    fi
+    
+    # Cache to /etc/environment for system-wide access (requires root)
+    if [ "$(id -u)" -eq 0 ]; then
+        if grep -q "^WAN_IP=" /etc/environment 2>/dev/null; then
+            sed -i "s|^WAN_IP=.*|WAN_IP=\"$WAN_IP\"|" /etc/environment
+        else
+            echo "WAN_IP=\"$WAN_IP\"" >> /etc/environment
+        fi
+    fi
+    
+    export WAN_IP
+    return 0
+}
+get_wan_ip
+
+# prompts first
+if [ "${OPTIONS[passwordless_sudoer]}" = "1" ]; then
+  # already installed ?
+  if [ -x "/usr/local/bin/passwdls" ]; then
+    # yes => ask if wants to re-install ? (preseed does NOT apply to reinstalls)
+    REINSTALL_SUDO=$(prompt_with_getinput "Passwordless sudoer already installed. Re-install and update secret? [y/n]" "n" 10)
+    status=$?
+    if [ $status -eq 200 ] || [ -z "$REINSTALL_SUDO" ]; then
+      REINSTALL_SUDO="n"
+    fi
+    if [[ "$REINSTALL_SUDO" =~ ^[Yy]$ ]]; then
+      # yes => ask for the needed password
+      SUDO_SECRET=$(prompt_with_getinput "Set SUDO protection secret" "" 10 "dotted" "true" "true" "false")
+      status=$?
+      if [ $status -eq 200 ] || [ -z "$SUDO_SECRET" ]; then
+        echo "Skipping sudo secret setup as requested."
+        unset SUDO_SECRET
+      fi
+    else
+      # no => skip
+      unset SUDO_SECRET
+    fi
+  else
+    # not installed => check preseed first, then prompt
+    if [ "$SETUP_PRESEED" = true ] && [ -n "${PRESEED_SUDO_SECRET:-}" ]; then
+      SUDO_SECRET="$PRESEED_SUDO_SECRET"
+      echo "Using preseeded SUDO protection secret."
+    else
+      SUDO_SECRET=$(prompt_with_getinput "Set SUDO protection secret" "" 10 "dotted" "true" "true" "false")
+      status=$?
+      if [ $status -eq 200 ] || [ -z "$SUDO_SECRET" ]; then
+        echo "Skipping sudo secret setup as requested."
+        unset SUDO_SECRET
+      fi
+    fi
+  fi
+fi
+if [ "${OPTIONS[webserver]}" = "1" ]; then
+  # already installed ?
+  if dpkg -s apache2 php mariadb-server &>/dev/null; then
+    # yes => ask if wants to re-install ?
+    REINSTALL_WEBSERVER=$(prompt_with_getinput "Webserver (Apache, PHP, MariaDB) already installed. Re-install webserver stack? [y/n]" "n" 10)
+    status=$?
+    if [ $status -eq 200 ] || [ -z "$REINSTALL_WEBSERVER" ]; then
+      REINSTALL_WEBSERVER="n"
+    fi
+    if [[ "$REINSTALL_WEBSERVER" =~ ^[Yy]$ ]]; then
+      # on reinstall, reuse shared FQDN prompt logic when apache_domains is enabled
+      prompt_main_fqdn_if_needed
+    fi
+  else
+    # first-time install: always offer the shared FQDN prompt when apache_domains is enabled
+    prompt_main_fqdn_if_needed
+  fi
+fi
+if [ "${OPTIONS[phpmyadmin]}" = "1" ]; then
+  # already installed ?
+  if dpkg -s phpmyadmin &>/dev/null; then
+    # yes => ask if wants to re-install ? (preseed does NOT apply to reinstalls)
+    REINSTALL_PMA=$(prompt_with_getinput "phpMyAdmin already installed. Re-install and reconfigure DB user password? [y/n]" "n" 10)
+    status=$?
+    if [ $status -eq 200 ] || [ -z "$REINSTALL_PMA" ]; then
+      REINSTALL_PMA="n"
+    fi
+    if [[ "$REINSTALL_PMA" =~ ^[Yy]$ ]]; then
+      while true; do
+        PHPMYADMIN_SECRET=$(prompt_with_getinput "Set phpMyAdmin database user password" "" 10 "dotted" "true" "true" "false")
+        status=$?
+        if [ $status -eq 200 ] || [ -z "$PHPMYADMIN_SECRET" ]; then
+          unset PHPMYADMIN_SECRET
+          break
+        fi
+        break
+      done
+    else
+      unset PHPMYADMIN_SECRET
+    fi
+  else
+    # not installed => check preseed first, then prompt
+    if [ "$SETUP_PRESEED" = true ] && [ -n "${PRESEED_PHPMYADMIN_SECRET:-}" ]; then
+      PHPMYADMIN_SECRET="$PRESEED_PHPMYADMIN_SECRET"
+      echo "Using preseeded phpMyAdmin database user password."
+    else
+      while true; do
+        PHPMYADMIN_SECRET=$(prompt_with_getinput "Set phpMyAdmin database user password" "" 10 "dotted" "true" "true" "false")
+        status=$?
+        if [ $status -eq 200 ] || [ -z "$PHPMYADMIN_SECRET" ]; then
+          unset PHPMYADMIN_SECRET
+          break
+        fi
+        break
+      done
+    fi
+  fi
+fi
+if [ "${OPTIONS[certbot]}" = "1" ]; then
+  cert_bot_email_prompt(){
+    while true; do
+      CERTBOT_EMAIL=$(prompt_with_getinput "certbot email (required when installing certbot)" "" 10 "visible" "false" "true" "false")
+      status=$?
+      if [ $status -eq 200 ] || [ -z "$CERTBOT_EMAIL" ]; then
+        unset CERTBOT_EMAIL
+        return 1
+      fi
+      return 0
+    done
+  }
+  # already installed ?
+  if dpkg -s certbot &>/dev/null; then
+    # yes => ask if wants to re-install / re-register ? (preseed does NOT apply to reinstalls)
+    REINSTALL_CERTBOT=$(prompt_with_getinput "Certbot already installed. Re-run registration and update email? [y/n]" "n" 10)
+    status=$?
+    if [ $status -eq 200 ] || [ -z "$REINSTALL_CERTBOT" ]; then
+      REINSTALL_CERTBOT="n"
+    fi
+    if [[ "$REINSTALL_CERTBOT" =~ ^[Yy]$ ]]; then
+      cert_bot_email_prompt
+      email_prompt_result=$?
+      if [ $email_prompt_result -eq 0 ]; then
+        while true; do
+          if ! is_valid_email "$CERTBOT_EMAIL"; then
+            echo "Please enter a valid email for certbot."
+            cert_bot_email_prompt
+            if [ $? -ne 0 ]; then
+              break
+            fi
+          else
+            break
+          fi
+        done
+      fi
+    else
+      unset CERTBOT_EMAIL
+    fi
+  else
+    # not installed => check preseed first, then prompt
+    if [ "$SETUP_PRESEED" = true ] && [ -n "${PRESEED_CERTBOT_EMAIL:-}" ]; then
+      if is_valid_email "$PRESEED_CERTBOT_EMAIL"; then
+        CERTBOT_EMAIL="$PRESEED_CERTBOT_EMAIL"
+        echo "Using preseeded certbot email: $CERTBOT_EMAIL"
+      else
+        echo "Warning: Preseeded certbot email is invalid, falling back to prompt"
+        cert_bot_email_prompt
+        email_prompt_result=$?
+        if [ $email_prompt_result -eq 0 ]; then
+          while true; do
+            if ! is_valid_email "$CERTBOT_EMAIL"; then
+              echo "Please enter a valid email for certbot."
+              cert_bot_email_prompt
+              if [ $? -ne 0 ]; then
+                break
+              fi
+            else
+              break
+            fi
+          done
+        fi
+      fi
+    else
+      cert_bot_email_prompt
+      email_prompt_result=$?
+      if [ $email_prompt_result -eq 0 ]; then
+        while true; do
+          if ! is_valid_email "$CERTBOT_EMAIL"; then
+            echo "Please enter a valid email for certbot."
+            cert_bot_email_prompt
+            if [ $? -ne 0 ]; then
+              break
+            fi
+          else
+            break
+          fi
+        done
+      fi
+    fi
+    
+    # Only handle Namecheap when certbot email is successfully set
+    if [ -n "${CERTBOT_EMAIL:-}" ]; then
+      # Only handle Namecheap when certbot is actually being (re)registered
+      NAMECHEAP_INSTALLED=false
+      # Consider Namecheap installed if there is at least one namecheap.com row in creds.db
+      if [ -f "/etc/fqdntools/creds.db" ] && command -v sqlite3 >/dev/null 2>&1; then
+        if sqlite3 /etc/fqdntools/creds.db "SELECT 1 FROM creds WHERE provider='namecheap.com' LIMIT 1;" 2>/dev/null | grep -q 1; then
+          NAMECHEAP_INSTALLED=true
+        fi
+      fi
+
+      if [ "$NAMECHEAP_INSTALLED" = true ]; then
+        # Namecheap API already configured -> ask about re-install / update (preseed does NOT apply)
+        ADD_NAMECHEAP=$(prompt_with_getinput "Namecheap API credentials already configured. Re-install / update them now? [y/n]" "n" 10)
+        status=$?
+        if [ $status -eq 200 ] || [ -z "$ADD_NAMECHEAP" ]; then
+          ADD_NAMECHEAP="n"
+        fi
+        if [ "$ADD_NAMECHEAP" = "y" ] || [ "$ADD_NAMECHEAP" = "Y" ]; then
+          while true; do
+            NC_USERNAME=$(prompt_with_getinput "Namecheap username" "" 0 "visible" "false" "true" "false")
+            status=$?
+            if [ $status -eq 200 ] || [ -z "$NC_USERNAME" ]; then
+              echo "Skipping Namecheap credentials." >&2
+              unset NC_USERNAME NC_API_KEY
+              break
+            fi
+            NC_API_KEY=$(prompt_with_getinput "Namecheap API key" "" 0 "dotted" "false" "true" "false")
+            status=$?
+            if [ $status -eq 200 ] || [ -z "$NC_API_KEY" ]; then
+              echo "Skipping Namecheap credentials." >&2
+              unset NC_USERNAME NC_API_KEY
+              break
+            fi
+            break
+          done
+        fi
+      else
+        # Namecheap not yet configured -> check preseed first
+        if [ "$SETUP_PRESEED" = true ] && [ -n "${PRESEED_NC_USERNAME:-}" ] && [ -n "${PRESEED_NC_API_KEY:-}" ]; then
+          NC_USERNAME="$PRESEED_NC_USERNAME"
+          NC_API_KEY="$PRESEED_NC_API_KEY"
+          echo "Using preseeded Namecheap credentials."
+        else
+          ADD_NAMECHEAP=$(prompt_with_getinput "Would you like to add Namecheap username and API key now? (extremely helpful) [y/n]" "n" 10)
+          status=$?
+          if [ $status -eq 200 ] || [ -z "$ADD_NAMECHEAP" ]; then
+            ADD_NAMECHEAP="n"
+          fi
+          if [ "$ADD_NAMECHEAP" = "y" ] || [ "$ADD_NAMECHEAP" = "Y" ]; then
+            while true; do
+              NC_USERNAME=$(prompt_with_getinput "Namecheap username" "" 0 "visible" "false" "true" "false")
+              status=$?
+              if [ $status -eq 200 ] || [ -z "$NC_USERNAME" ]; then
+                echo "Skipping Namecheap credentials." >&2
+                unset NC_USERNAME NC_API_KEY
+                break
+              fi
+              NC_API_KEY=$(prompt_with_getinput "Namecheap API key" "" 0 "dotted" "false" "true" "false")
+              status=$?
+              if [ $status -eq 200 ] || [ -z "$NC_API_KEY" ]; then
+                echo "Skipping Namecheap credentials." >&2
+                unset NC_USERNAME NC_API_KEY
+                break
+              fi
+              break
+            done
+          fi
+        fi
+      fi
+    fi
+  fi
+fi
+if [ "${OPTIONS[docker_mailserver]}" = "1" ]; then
+  # already set up ?
+  if [ -f "/opt/compose/docker-mailserver/compose.yaml" ]; then
+    # yes => ask if wants to re-install ? (preseed does NOT apply to reinstalls)
+    REINSTALL_DMS=$(prompt_with_getinput "Docker Mailserver already set up. Re-install and reconfigure hostname/email? [y/n]" "n" 10)
+    status=$?
+    if [ $status -eq 200 ] || [ -z "$REINSTALL_DMS" ]; then
+      REINSTALL_DMS="n"
+    fi
+    SKIP_DMS=false
+    if [[ ! "$REINSTALL_DMS" =~ ^[Yy]$ ]]; then
+      SKIP_DMS=true
+    fi
+  else
+    # not installed => check preseed first
+    SKIP_DMS=false
+    if [ "$SETUP_PRESEED" = true ]; then
+      # Preseed logic for DMS - derive choice from what's provided
+      if [ -n "${PRESEED_DMS_EMAIL:-}" ]; then
+        if is_valid_email "$PRESEED_DMS_EMAIL"; then
+          DMS_EMAIL="$PRESEED_DMS_EMAIL"
+          echo "Using preseeded Docker Mailserver email: $DMS_EMAIL"
+          SKIP_DMS=false
+        else
+          echo "Warning: Preseeded DMS email is invalid, falling back to prompt"
+        fi
+      elif [ -n "${PRESEED_DMS_HOSTNAME:-}" ]; then
+        if is_valid_fqdn "$PRESEED_DMS_HOSTNAME"; then
+          DMS_HOSTNAME="$PRESEED_DMS_HOSTNAME"
+          echo "Using preseeded Docker Mailserver hostname: $DMS_HOSTNAME"
+          SKIP_DMS=false
+        else
+          echo "Warning: Preseeded DMS hostname is invalid, falling back to prompt"
+        fi
+      elif [ "${PRESEED_DMS_CHOICE:-}" = "c" ] || [ "${PRESEED_DMS_CHOICE:-}" = "C" ]; then
+        # Explicitly skipped in preseed
+        SKIP_DMS=true
+      fi
+      # If DMS values were set from preseed, skip the interactive prompts
+      if [ -n "${DMS_EMAIL:-}" ] || [ -n "${DMS_HOSTNAME:-}" ]; then
+        SKIP_DMS=false
+      fi
+    fi
+  fi
+  # Only show interactive prompts if preseed didn't provide valid values
+  if [ "$SKIP_DMS" = false ] && [ -z "${DMS_EMAIL:-}" ] && [ -z "${DMS_HOSTNAME:-}" ]; then
+    while true; do  
+      printf "\rdocker mailserver requires a hostname at least, that or provide an email
+        1- hostname (FQDN)
+        2- email (recommended)
+        provide a number or c to cancel\n"
+
+      DMS_CHOICE=$(prompt_with_getinput "Select 1 for hostname, 2 for email, or c to cancel" "c" 10)
+      status=$?
+      if [ $status -eq 200 ] || [ -z "$DMS_CHOICE" ]; then
+        # user chose to skip at the main choice prompt
+        SKIP_DMS=true
+        break
+      fi
+      if [ "$DMS_CHOICE" = "c" ] || [ "$DMS_CHOICE" = "C" ]; then
+        # explicit cancel treated as skip
+        SKIP_DMS=true
+        break
+      elif [ "$DMS_CHOICE" = "1" ]; then
+        # User chose hostname (FQDN)
+        while true; do
+          # If a main FQDN was provided earlier, ask whether to reuse it
+          if [ -n "${FQDN:-}" ]; then
+            USE_EXISTING_FQDN=$(prompt_with_getinput "Use previously provided FQDN ($FQDN) for docker mailserver? [y/n]" "y" 10)
+            status=$?
+            if [ $status -eq 200 ]; then
+              # treat skip here as not using existing FQDN; continue to prompt for a new one
+              USE_EXISTING_FQDN="n"
+            fi
+            if [[ "$USE_EXISTING_FQDN" =~ ^[Yy]$ ]]; then
+              DMS_HOSTNAME="$FQDN"
+              break 2
+            fi
+          fi
+          DMS_HOSTNAME=$(prompt_with_getinput "Enter FQDN for docker mailserver" "" 10 "visible" "false" "true" "false")
+          status=$?
+          if [ $status -eq 200 ]; then
+            # user chose to skip
+            SKIP_DMS=true
+            break 2
+          fi
+          if is_valid_fqdn "$DMS_HOSTNAME"; then
+            # Valid FQDN provided
+            break 2  # Break out of both loops
+          else
+            # Invalid FQDN; loop back unless user uses skip
+            echo "Error: Invalid FQDN format: $DMS_HOSTNAME" >&2
+          fi
+        done
+      elif [ "$DMS_CHOICE" = "2" ]; then
+        # User chose email
+        while true; do
+          # Check if certbot email was provided earlier
+          if [ -n "${CERTBOT_EMAIL:-}" ]; then
+            USE_CERTBOT_EMAIL=$(prompt_with_getinput "Use the same previous email ($CERTBOT_EMAIL)? [y/n]" "y" 10)
+            status=$?
+            if [ $status -eq 200 ]; then
+              # treat skip here as not using existing email, continue to prompt
+              USE_CERTBOT_EMAIL="n"
+            fi
+            if [ "$USE_CERTBOT_EMAIL" = "y" ] || [ "$USE_CERTBOT_EMAIL" = "Y" ]; then
+              DMS_EMAIL="$CERTBOT_EMAIL"
+              break 2  # Break out of both loops
+            fi
+          fi
+          DMS_EMAIL_INPUT=$(prompt_with_getinput "Enter email for docker mailserver" "" 10 "visible" "false" "true" "false")
+          status=$?
+          if [ $status -eq 200 ]; then
+            # user chose to skip email entry
+            SKIP_DMS=true
+            break 2
+          fi
+          if is_valid_email "$DMS_EMAIL_INPUT"; then
+            # Valid email provided
+            DMS_EMAIL="$DMS_EMAIL_INPUT"
+            break 2  # Break out of both loops
+          else
+            # Invalid email; loop back unless user uses skip
+            echo "Error: Email format is invalid" >&2
+          fi
+        done
+      else
+        # Invalid choice; let user retry via loop, or use skip at prompt
+        echo "Error: Invalid choice. Please enter 1, 2, or c" >&2
+        # loop will re-run and user can use ESC to skip at the main choice prompt
+      fi
+    done
+  fi
+fi
+
+print_status "Updating package lists and upgrading existing packages, this will take a moment... "
+{
+  apt update && apt upgrade -y 
+} >>./log 2>&1
+echo
+
+# the actual install logic.
+if [ -n "$SUDO_SECRET" ]; then
+  if [ -x "/usr/local/bin/passwdls" ]; then
+    print_status "Passwordless sudoer already installed. Skipping... "
+    echo
+  else
+    print_status "Installing passwordless sudoer... "
+    # pass SUDO_SECRET into the helper's environment without exporting it globally
+    SUDO_SECRET="$SUDO_SECRET" bash ./helpers/passwdless_sudoer.sh >>./log 2>&1 &
+    bash ./helpers/progress.sh $!
+    echo
+  fi
+fi
+if [ "${OPTIONS[webserver]}" = "1" ]; then
+  if dpkg -s apache2 php mariadb-server &>/dev/null; then
+    print_status "Webserver (Apache, PHP, MariaDB) already installed. Skipping... "
+    echo
+  else
+    print_status "Installing webserver (Apache, PHP, MariaDB)... "
+    {
+      apt install apache2 php php-fpm mariadb-server sqlite3 php-sqlite3 -y
+      a2enmod proxy_fcgi setenvif rewrite ssl proxy_http
+      a2enconf php*-fpm
+      a2dissite 000-default.conf
+      rm /etc/apache2/sites-available/*
+      systemctl restart php8.3-fpm
+      systemctl restart apache2
+    } >>./log 2>&1 &
+    bash ./helpers/progress.sh $!
+    echo
+  fi
+fi
+if [ "${OPTIONS[apache_domains]}" = "1" ]; then
+  # If all helper commands exist, skip installation
+  if command -v a2sitemgr >/dev/null 2>&1 && \
+     command -v fqdncredmgr >/dev/null 2>&1 && \
+     command -v fqdnmgr >/dev/null 2>&1 && \
+     command -v a2wcrecalc >/dev/null 2>&1; then
+    print_status "Apache domain management tools already installed. Skipping... "
+    echo
+  else
+    print_status "Installing Apache domain management tools... "
+    {
+      apt install -y whois sqlite3 libxml2-utils jq
+      mkdir a2tools && cd a2tools
+      git clone https://github.com/TBAIKamine/a2tools.git .
+      bash ./setup.sh
+      hash -r
+      cd ..
+    } >>./log 2>&1 &
+    bash ./helpers/progress.sh $!
+    echo
+  fi
+fi
+if [ "${OPTIONS[certbot]}" = "1" ]; then
+  if dpkg -s certbot &>/dev/null; then
+    print_status "Certbot already installed. Skipping... "
+    echo
+  else
+    print_status "Installing Certbot... "
+    {
+      apt install certbot -y >>/dev/null 2>&1
+      if [ -n "$CERTBOT_EMAIL" ]; then
+        certbot register --agree-tos --non-interactive --no-eff-email --email "$CERTBOT_EMAIL" >>./log 2>&1
+      fi
+    }
+    bash ./helpers/progress.sh $!
+    echo
+  fi
+fi
+if [ -n "${NC_USERNAME:-}" ] && [ -n "${NC_API_KEY:-}" ]; then
+  {
+    # credentials manager
+    if ! command -v fqdncredmgr &>/dev/null; then
+      echo "Error: fqdncredmgr command not found after certbot installation." >&2
+    elif [ -n "$NC_USERNAME" ] && [ -n "$NC_API_KEY" ]; then
+      fqdncredmgr add namecheap.com "$NC_USERNAME" -p "$NC_API_KEY"
+    fi
+  } >>./log 2>&1
+  # Wait for credentials to be saved before prompting for DNS init
+  wait
+  
+  # Prompt to set initial DNS records for Namecheap domains
+  if [ -n "$NC_USERNAME" ] && [ -n "$NC_API_KEY" ] && command -v fqdnmgr &>/dev/null; then
+    # Check for preseed value first
+    if [ "$SETUP_PRESEED" = true ] && [ -n "${PRESEED_SETUP_DNS:-}" ]; then
+      SETUP_DNS="$PRESEED_SETUP_DNS"
+      echo "Using preseeded DNS setup choice: $SETUP_DNS"
+    else
+      SETUP_DNS=$(prompt_with_getinput "Set initial DNS records for all Namecheap domains? [Y/n]" "Y" 10)
+      status=$?
+      if [ $status -eq 200 ] || [ -z "$SETUP_DNS" ]; then
+        SETUP_DNS="Y"
+      fi
+    fi
+    
+    if [[ "$SETUP_DNS" =~ ^[Yy] ]]; then
+      # Check for preseed value first
+      if [ "$SETUP_PRESEED" = true ] && [ -n "${PRESEED_DNS_SELECTION:-}" ]; then
+        DNS_SELECTION="$PRESEED_DNS_SELECTION"
+        echo "Using preseeded DNS selection: $DNS_SELECTION"
+        echo "Starting DNS initialization in background..."
+        fqdnmgr setInitDNSRecords -r namecheap.com >>./log 2>&1 &
+      else
+        # Interactive mode - let the user see and interact with the prompts
+        fqdnmgr setInitDNSRecords -r namecheap.com
+      fi
+    fi
+  fi
+fi
+if [ "${OPTIONS[phpmyadmin]}" = "1" ]; then
+    if [ -n "$PHPMYADMIN_SECRET" ]; then
+      if dpkg -s phpmyadmin &>/dev/null; then
+        print_status "phpMyAdmin already installed. Skipping... "
+        echo
+      else
+        print_status "Installing phpMyAdmin... "
+        {
+          apt install dbconfig-common -y
+          export DEBIAN_FRONTEND=noninteractive
+          debconf-set-selections <<< "phpmyadmin phpmyadmin/dbconfig-install boolean true"
+          debconf-set-selections <<< "phpmyadmin phpmyadmin/mysql/app-pass password $PHPMYADMIN_SECRET"
+          debconf-set-selections <<< "phpmyadmin phpmyadmin/password-confirm password $PHPMYADMIN_SECRET"
+          debconf-set-selections <<< "phpmyadmin phpmyadmin/reconfigure-webserver multiselect apache2"
+          apt install phpmyadmin -y
+        } >>./log 2>&1 &
+        bash ./helpers/progress.sh $!
+        echo
+      fi
+    fi
+fi
+if [ "${OPTIONS[roundcube]}" = "1" ]; then
+  if [ -d "/var/www/mail" ]; then
+    print_status "Roundcube webmail already installed. Skipping... "
+    echo
+  else
+    print_status "Installing Roundcube webmail... "
+    # pass FQDN into the helper so it can configure vhosts when provided
+    FQDN="$FQDN" bash ./helpers/roundcube_install.sh >>./log 2>&1 &
+    bash ./helpers/progress.sh $!
+    echo
+  fi
+fi
+if [ "${OPTIONS[wp_cli]}" = "1" ]; then
+  if [ -x "/usr/local/bin/wp" ]; then
+    print_status "WP-CLI already installed. Skipping... "
+    echo
+  else
+    print_status "Installing WP-CLI... "
+    {
+      curl -O https://raw.githubusercontent.com/wp-cli/builds/gh-pages/phar/wp-cli.phar
+      chmod +x wp-cli.phar
+      mv wp-cli.phar /usr/local/bin/wp
+      chown user:user /usr/local/bin/wp
+    } >>./log 2>&1 &
+    bash ./helpers/progress.sh $!
+    echo
+  fi
+fi
+if [ "${OPTIONS[pyenv_python]}" = "1" ]; then
+  # Check pyenv/Python from the perspective of the normal user, not root
+  if [ -z "$SUDO_USER" ]; then
+    if sudo -u "$SUDO_USER" bash -lc '
+      export PYENV_ROOT="$HOME/.pyenv"
+      [[ -d "$PYENV_ROOT/bin" ]] && export PATH="$PYENV_ROOT/bin:$PATH"
+      command -v pyenv >/dev/null 2>&1 || exit 1
+      eval "$(pyenv init - bash)" >/dev/null 2>&1 || true
+      pyenv versions 2>/dev/null | grep -q "3\.13"
+    '; then
+      print_status "Pyenv and Python 3.13 already installed. Skipping... "
+      echo
+    else
+      print_status "Installing Pyenv and Python 3.13... "
+      {
+        apt install make build-essential libssl-dev zlib1g-dev \
+        libbz2-dev libreadline-dev libsqlite3-dev curl git \
+        libncursesw5-dev xz-utils tk-dev libxml2-dev libxmlsec1-dev libffi-dev liblzma-dev -y
+        sudo -u user bash -c 'curl -fsSL https://pyenv.run | bash'
+        cat ./helpers/pyenv_profile.txt >> /home/user/.bashrc
+        echo "export PYENV_ROOT=\"/home/user/.pyenv\"" >> /home/user/.bashrc
+        [[ -d /home/user/.pyenv/bin ]] && echo "export PATH=\"$PYENV_ROOT/bin:\$PATH\"" >> /home/user/.bashrc
+        hash -r #refresh environment
+        sudo -u user bash -l -c '
+            export PYENV_ROOT="$HOME/.pyenv"
+            [[ -d $PYENV_ROOT/bin ]] && export PATH="$PYENV_ROOT/bin:$PATH"
+            eval "$(pyenv init - bash)"
+            eval "$(pyenv virtualenv-init -)"
+            pyenv install 3.13
+            pyenv global 3.13
+        '
+        } >>./log 2>&1 &
+      bash ./helpers/progress.sh $!
+      echo
+    fi
+  fi
+fi
+if [ "${OPTIONS[podman]}" = "1" ]; then
+  if command -v podman &>/dev/null; then
+    print_status "Podman already installed. Skipping... "
+    echo
+  else
+    print_status "Installing Podman... "
+    bash ./helpers/podman_install.sh >>./log 2>&1 &
+    bash ./helpers/progress.sh $!
+    echo
+  fi
+fi
+if [ "${OPTIONS[lazydocker]}" = "1" ]; then
+  if [ -x "/usr/bin/lazydocker" ]; then
+    print_status "LazyDocker already installed. Skipping... "
+    echo
+  else
+    print_status "Installing LazyDocker... "
+    {
+      export DIR=/usr/bin; curl -sL https://raw.githubusercontent.com/jesseduffield/lazydocker/master/scripts/install_update_linux.sh | sudo DIR=$DIR bash
+      chown user:user /usr/bin/lazydocker
+    } >>./log 2>&1 &
+    bash ./helpers/progress.sh $!
+    echo
+  fi
+fi
+if [ "${OPTIONS[portainer]}" = "1" ]; then
+  if podman volume inspect portainer_data &>/dev/null && [ -f "/opt/compose/portainer/compose.yaml" ]; then
+    print_status "Portainer already set up. Skipping... "
+    echo
+  else
+    print_status "Installing Portainer... "
+    {
+      podman volume create portainer_data
+      if [ -n "$FQDN" ]; then
+        #TODO: check here if a cert will be issued
+        a2sitemgr -d "portainer.$FQDN" --mode proxypass -s -p 9443
+      fi
+      mkdir -p /opt/compose/portainer
+      cp $ABS_PATH/helpers/portainer-compose.yaml /opt/compose/portainer/compose.yaml
+    } >>./log 2>&1 &
+    bash ./helpers/progress.sh $!
+    echo
+  fi
+fi
+if [ "${OPTIONS[docker_mailserver]}" = "1" ]; then
+  if [ -f "/opt/compose/docker-mailserver/compose.yaml" ]; then
+    print_status "Docker Mailserver already set up. Skipping... "
+    echo
+  else
+    print_status "Installing Docker Mailserver... "
+    # pass DMS_EMAIL/DMS_HOSTNAME into the helper's environment so it can use them
+    DMS_EMAIL="$DMS_EMAIL" DMS_HOSTNAME="$DMS_HOSTNAME" bash ./helpers/dms_install.sh >>./log 2>&1 &
+    bash ./helpers/progress.sh $!
+    echo
+  fi
+fi
+if [ "${OPTIONS[docker_mailserver]}" = "1" ] && [ "${OPTIONS[webserver]}" = "1" ] && [ "${OPTIONS[apache_domains]}" = "1" ]; then
+  if [ -x "/usr/local/bin/a2wcrecalc-dms.d/a2wcrecalc-dms.sh" ]; then
+    print_status "DMS Apache integration tool already installed. Skipping... "
+    echo
+  else
+    print_status "Installing DMS Apache integration tool... "
+    {
+      mkdir a2tools && cd a2tools
+      git clone https://github.com/TBAIKamine/a2tools.git .
+      bash ./setup.sh
+      hash -r
+      cd ..
+    } >>./log 2>&1 &
+    bash ./helpers/progress.sh $!
+    echo
+  fi
+fi
+if [ "${OPTIONS[gitea]}" = "1" ]; then
+  if [ -f "/opt/compose/gitea/compose.yaml" ]; then
+    print_status "Gitea already set up. Skipping... "
+    echo
+  else
+    print_status "Installing Gitea... "
+    {
+      mkdir -p /opt/compose/gitea/gitea
+      cd /opt/compose/gitea
+      chown user:user *
+      chmod 755 -R gitea
+      cp $ABS_PATH/helpers/gitea-compose.yaml /opt/compose/gitea/compose.yaml
+      if [ -n "$FQDN" ]; then
+        #check if a cert will be issued
+        a2sitemgr -d "gitea.$FQDN" --mode proxypass -p 3000
+      fi
+    } >>./log 2>&1 &
+    bash ./helpers/progress.sh $!
+    echo
+  fi
+fi
+if [ "${OPTIONS[gitea_runner]}" = "1" ]; then
+    echo "Installing Gitea Act Runner (dual user setup)..."
+    # TODO: Implement Gitea runner installation logic
+fi
+if [ "${OPTIONS[n8n]}" = "1" ]; then
+  if podman volume inspect n8n_data &>/dev/null && [ -f "/opt/compose/n8n/compose.yaml" ]; then
+    print_status "n8n already set up. Skipping... "
+    echo
+  else
+    print_status "Installing n8n... "
+    {
+      podman volume create n8n_data
+      mkdir -p /opt/compose/n8n
+      cp $ABS_PATH/helpers/n8n-compose.yaml /opt/compose/n8n/compose.yaml
+      if [ -n "$FQDN" ]; then
+        #TODO: check if a cert will be issued
+        a2sitemgr -d "n8n.$FQDN" --mode proxypass -p 5678
+      fi
+    } >>./log 2>&1 &
+    bash ./helpers/progress.sh $!
+    echo
+  fi
+fi
+if [ "${OPTIONS[selenium]}" = "1" ]; then
+    echo "Installing Selenium testing framework..."
+    # TODO: Implement Selenium installation logic
+fi
+if [ "${OPTIONS[homeassistant]}" = "1" ]; then
+    echo "Installing Home Assistant automation..."
+    # TODO: Implement Home Assistant installation logic
+fi
+if [ "${OPTIONS[grafana_otel]}" = "1" ]; then
+    echo "Installing Grafana with OpenTelemetry LGTM stack..."
+    # TODO: Implement Grafana + OTEL installation logic
+fi
+echo -e "\nSetup complete!"

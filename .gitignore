@@ -1,0 +1,13 @@
+# User data and scripts
+user-data.yaml
+prereboot.sh
+postreboot.sh
+
+# macOS hidden files
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db

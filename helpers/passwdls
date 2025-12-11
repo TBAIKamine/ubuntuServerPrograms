@@ -1,0 +1,59 @@
+#!/bin/bash
+source /usr/local/lib/scripts/getinput.sh
+SUDOERS_FILE="/etc/sudoers.d/secret_broker"
+
+# Check if argument is provided
+if [ $# -ne 1 ]; then
+  echo "Usage: $0 {on|off|update}"
+  exit 1
+fi
+
+case "$1" in
+  on)
+    # Enable passwordless sudo
+    if ! grep -q "NOPASSWD" "$SUDOERS_FILE"; then
+      echo "user ALL = NOPASSWD: /usr/local/bin/sudo-broker.sh" | tee -a "$SUDOERS_FILE" > /dev/null
+      echo "Passwordless sudo enabled"
+    else
+      echo "Passwordless sudo already enabled"
+    fi
+    ;;
+  off)
+    # Disable passwordless sudo
+    if grep -q "NOPASSWD" "$SUDOERS_FILE"; then
+      sed -i.bak "/NOPASSWD/d" "$SUDOERS_FILE"
+      echo "Passwordless sudo disabled"
+    else
+      echo "Passwordless sudo already disabled"
+    fi
+    ;;
+  update)
+    # Update the stored sudo secret hash. Use getInput to collect a
+    # confirmed, non-empty, dotted input and then store its sha256 hash.
+    echo "Updating sudo secret..." >&2
+    # Ask interactively; visibility=dotted, require confirmation, do not allow empty
+    NEW_SECRET=$(getInput "Enter new sudo secret" "" 0 "dotted" "true" "true" "false")
+    # If no value returned, abort
+    NEW_SECRET="${NEW_SECRET%$'\n'}"
+    if [ -z "${NEW_SECRET}" ]; then
+      echo "No secret entered. Aborting update." >&2
+      exit 1
+    fi
+
+    # Secure the hash file while updating
+    if [ -f /etc/sudo_secret.hash ]; then
+      chmod 700 /etc/sudo_secret.hash || true
+    fi
+    # Write new hash (use printf and trim CR/newline for consistency)
+    printf '%s' "${NEW_SECRET}" | tr -d '\r\n' | sha256sum | awk '{print $1}' | tee /etc/sudo_secret.hash > /dev/null
+    chmod 440 /etc/sudo_secret.hash
+    chown root:root /etc/sudo_secret.hash || true
+
+    echo "Sudo secret hash updated." >&2
+    ;;
+  *)
+    echo "Invalid argument: $1"
+    echo "Usage: $0 {on|off}"
+    exit 1
+    ;;
+esac

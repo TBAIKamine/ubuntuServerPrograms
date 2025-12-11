@@ -1,0 +1,16 @@
+version: "3.8"
+services:
+  portainer:
+    image: portainer/portainer-ce:lts
+    container_name: portainer
+    restart: always
+    privileged: true
+    environment:
+      - TRUSTED_ORIGINS=portainer.$FQDN
+    ports:
+      - "9443:9443"
+    volumes:
+      - /run/user/1000/podman/podman.sock:/var/run/docker.sock
+      - portainer_data:/data
+volumes:
+  portainer_data:

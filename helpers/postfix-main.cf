@@ -1,0 +1,3 @@
+smtp_sasl_auth_enable = yes
+smtp_use_tls = yes
+tls_server_sni_maps = hash:/tmp/docker-mailserver/sni_cert_map

@@ -1,0 +1,18 @@
+[Unit]
+Description=VPN Bypass Route Setup for Incoming Traffic
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+# Path to your routing script
+ExecStart=/usr/local/bin/setup_vpn_bypass.sh
+
+# If the script needs to be re-run after the VPN establishes (and potentially resets routes)
+# you may need a more complex setup or a tool like 'network-manager-dispatcher'.
+# However, for a basic server setup, ExecStart is usually enough.
+
+StandardOutput=journal
+
+[Install]
+WantedBy=multi-user.target
