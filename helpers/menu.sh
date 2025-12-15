@@ -7,7 +7,7 @@
 declare -A OPTIONS=(
     ["passwordless_sudoer"]="1"
     ["fail2ban_vpn_bypass"]="1"
-    ["sharkvpn"]="1"
+    ["surfshark"]="1"
     ["webserver"]="1"
     ["apache_domains"]="1"
     ["certbot"]="1"
@@ -48,7 +48,7 @@ declare -A DEPENDENCIES=(
 declare -A DESCRIPTIONS=(
     ["passwordless_sudoer"]="Passwordless sudoer with secret"
     ["fail2ban_vpn_bypass"]="Fail2ban with VPN bypass for incoming traffic"
-    ["sharkvpn"]="SharkVPN client"
+    ["surfshark"]="surfshark client"
     ["webserver"]="Web server setup"
     ["apache_domains"]="Apache domains manager"
     ["certbot"]="Certbot SSL certificates (requires pyenv)"
@@ -72,7 +72,7 @@ declare -A DESCRIPTIONS=(
 OPTION_KEYS=(
     "passwordless_sudoer"
     "fail2ban_vpn_bypass"
-    "sharkvpn"
+    "surfshark"
     "webserver"
     "apache_domains"
     "certbot"
