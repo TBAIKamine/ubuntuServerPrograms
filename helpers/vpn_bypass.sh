@@ -1,4 +1,7 @@
 #!/bin/bash
+export DEBIAN_FRONTEND=noninteractive
+debconf-set-selections <<< "iptables-persistent iptables-persistent/autosave_v4 boolean true"
+debconf-set-selections <<< "iptables-persistent iptables-persistent/autosave_v6 boolean true"
 apt install fail2ban iptables-persistent -y
 cp /etc/fail2ban/jail.conf /etc/fail2ban/jail.local
 grep -q '^[sshd]' /etc/fail2ban/jail.local || echo -e '\n[sshd]\nenabled = true\n' >> /etc/fail2ban/jail.local
