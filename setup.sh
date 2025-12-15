@@ -156,7 +156,7 @@ fi
 source "$ABS_PATH/helpers/menu.sh"
 main
 declare -A OPTIONS
-for key in passwordless_sudoer fail2ban_vpn_bypass sharkvpn webserver apache_domains certbot phpmyadmin roundcube wp_cli pyenv_python podman lazydocker portainer gitea gitea_runner docker_mailserver n8n selenium homeassistant grafana_otel; do
+for key in passwordless_sudoer fail2ban_vpn_bypass surfshark webserver apache_domains certbot phpmyadmin roundcube wp_cli pyenv_python podman lazydocker portainer gitea gitea_runner docker_mailserver n8n selenium homeassistant grafana_otel; do
     var_name="OPTION_${key}"
     OPTIONS["$key"]="${!var_name}"
 done
@@ -677,6 +677,35 @@ if [ -n "$SUDO_SECRET" ]; then
     print_status "Installing passwordless sudoer... "
     # pass SUDO_SECRET into the helper's environment without exporting it globally
     SUDO_SECRET="$SUDO_SECRET" bash ./helpers/passwdless_sudoer.sh >>./log 2>&1 &
+    bash ./helpers/progress.sh $!
+    echo
+  fi
+fi
+if [ "${OPTIONS[fail2ban_vpn_bypass]}" = "1" ]; then
+  if dpkg -s fail2ban &>/dev/null; then
+    print_status "Fail2Ban VPN bypass already installed. Skipping... "
+    echo
+  else
+    print_status "Installing Fail2Ban VPN bypass... "
+    {
+      bash ./helpers/vpn_bypass.sh
+    } >>./log 2>&1 &
+    bash ./helpers/progress.sh $!
+    echo
+  fi
+fi
+if [ "${OPTIONS[surfshark]}" = "1" ]; then
+  if dpkg -s surfshark &>/dev/null; then
+    print_status "surfshark already installed. Skipping... "
+    echo
+  else
+    print_status "Installing surfshark... "
+    {
+      curl -f https://downloads.surfshark.com/linux/debian-install.sh --output surfshark-install.sh
+      sed -i '/^\$SUDO apt-get install -y surfshark$/,$d' surfshark-install.sh
+      sh surfshark-install.sh
+      sudo apt-get install surfshark-vpn -y
+    } >>./log 2>&1 &
     bash ./helpers/progress.sh $!
     echo
   fi
