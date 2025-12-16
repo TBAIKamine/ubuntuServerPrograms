@@ -316,6 +316,7 @@ if [ "${OPTIONS[passwordless_sudoer]}" = "1" ]; then
   fi
 fi
 if [ "${OPTIONS[fail2ban_vpn_bypass]}" = "1" ]; then
+  SKIP_VPN_BYPASS=false
   # already installed?
   if dpkg -s fail2ban &>/dev/null; then
     REINSTALL_VPN_BYPASS=$(prompt_with_getinput "Fail2Ban VPN bypass already installed. Re-install? [y/n]" "n" 10)
@@ -324,20 +325,17 @@ if [ "${OPTIONS[fail2ban_vpn_bypass]}" = "1" ]; then
       REINSTALL_VPN_BYPASS="n"
     fi
     if [[ ! "$REINSTALL_VPN_BYPASS" =~ ^[Yy]$ ]]; then
-      unset YOUR_INTERFACE YOUR_LAN_SUBNET YOUR_DEFAULT_GATEWAY YOUR_PUBLIC_IP
+      SKIP_VPN_BYPASS=true
     fi
   fi
   # only prompt for values if we haven't skipped
-  if [ -z "${YOUR_INTERFACE+x}" ]; then
-    :
-  else
+  if [ "$SKIP_VPN_BYPASS" = false ]; then
     if [ "$SETUP_PRESEED" = true ]; then
       if [ -z "${PRESEED_YOUR_INTERFACE:-}" ] || \
          [ -z "${PRESEED_YOUR_LAN_SUBNET:-}" ] || \
          [ -z "${PRESEED_YOUR_DEFAULT_GATEWAY:-}" ] || \
          [ -z "${PRESEED_YOUR_PUBLIC_IP:-}" ]; then
         echo "Skipping Fail2Ban VPN bypass: required preseed network values not provided."
-        unset YOUR_INTERFACE YOUR_LAN_SUBNET YOUR_DEFAULT_GATEWAY YOUR_PUBLIC_IP
       else
         YOUR_INTERFACE="$PRESEED_YOUR_INTERFACE"
         YOUR_LAN_SUBNET="$PRESEED_YOUR_LAN_SUBNET"
@@ -349,25 +347,21 @@ if [ "${OPTIONS[fail2ban_vpn_bypass]}" = "1" ]; then
       status=$?
       if [ $status -eq 200 ]; then
         echo "Skipping Fail2Ban VPN bypass as requested."
-        unset YOUR_INTERFACE YOUR_LAN_SUBNET YOUR_DEFAULT_GATEWAY YOUR_PUBLIC_IP
       else
         YOUR_LAN_SUBNET=$(prompt_with_getinput "Enter your LAN subnet in CIDR notation (e.g., 192.168.0.0/24):" "" 0 "visible" "false" "true" "false")
         status=$?
         if [ $status -eq 200 ]; then
           echo "Skipping Fail2Ban VPN bypass as requested."
-          unset YOUR_INTERFACE YOUR_LAN_SUBNET YOUR_DEFAULT_GATEWAY YOUR_PUBLIC_IP
         else
           YOUR_DEFAULT_GATEWAY=$(prompt_with_getinput "Enter your router/gateway IP (e.g., 192.168.0.1):" "" 0 "visible" "false" "true" "false")
           status=$?
           if [ $status -eq 200 ]; then
             echo "Skipping Fail2Ban VPN bypass as requested."
-            unset YOUR_INTERFACE YOUR_LAN_SUBNET YOUR_DEFAULT_GATEWAY YOUR_PUBLIC_IP
           else
             YOUR_PUBLIC_IP=$(prompt_with_getinput "Enter this server's LAN IP (e.g., 192.168.0.2):" "" 0 "visible" "false" "true" "false")
             status=$?
             if [ $status -eq 200 ]; then
               echo "Skipping Fail2Ban VPN bypass as requested."
-              unset YOUR_INTERFACE YOUR_LAN_SUBNET YOUR_DEFAULT_GATEWAY YOUR_PUBLIC_IP
             fi
           fi
         fi
