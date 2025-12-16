@@ -16,12 +16,13 @@ fi
 # (Using 'vpn_bypass' instead of 'ssh_bypass')
 sudo ip rule del to ${YOUR_PUBLIC_IP} iif ${YOUR_INTERFACE} lookup vpn_bypass 2>/dev/null
 sudo ip rule del from ${YOUR_PUBLIC_IP} oif ${YOUR_INTERFACE} lookup vpn_bypass 2>/dev/null
+sudo ip rule del from ${YOUR_PUBLIC_IP} lookup vpn_bypass priority 100 2>/dev/null
 sudo ip route flush table vpn_bypass 2>/dev/null
 
 # 3. Add routes to the new routing table (vpn_bypass)
 # These routes define how responses to incoming traffic should go: directly through your physical interface.
-sudo ip route add ${YOUR_LAN_SUBNET} dev ${YOUR_INTERFACE} table vpn_bypass
-sudo ip route add default via ${YOUR_DEFAULT_GATEWAY} dev ${YOUR_INTERFACE} table vpn_bypass
+sudo ip route replace ${YOUR_LAN_SUBNET} dev ${YOUR_INTERFACE} table vpn_bypass
+sudo ip route replace default via ${YOUR_DEFAULT_GATEWAY} dev ${YOUR_INTERFACE} table vpn_bypass
 
 # 4. Create IP rules for Policy-Based Routing
 

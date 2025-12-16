@@ -315,6 +315,63 @@ if [ "${OPTIONS[passwordless_sudoer]}" = "1" ]; then
     fi
   fi
 fi
+if [ "${OPTIONS[fail2ban_vpn_bypass]}" = "1" ]; then
+  if [ "$SETUP_PRESEED" = true ]; then
+    if [ -z "${PRESEED_YOUR_INTERFACE:-}" ] || \
+       [ -z "${PRESEED_YOUR_LAN_SUBNET:-}" ] || \
+       [ -z "${PRESEED_YOUR_DEFAULT_GATEWAY:-}" ] || \
+       [ -z "${PRESEED_YOUR_PUBLIC_IP:-}" ]; then
+      echo "Skipping Fail2Ban VPN bypass: required preseed network values not provided."
+      unset YOUR_INTERFACE YOUR_LAN_SUBNET YOUR_DEFAULT_GATEWAY YOUR_PUBLIC_IP
+    else
+      YOUR_INTERFACE="$PRESEED_YOUR_INTERFACE"
+      YOUR_LAN_SUBNET="$PRESEED_YOUR_LAN_SUBNET"
+      YOUR_DEFAULT_GATEWAY="$PRESEED_YOUR_DEFAULT_GATEWAY"
+      YOUR_PUBLIC_IP="$PRESEED_YOUR_PUBLIC_IP"
+    fi
+  else
+    # If already configured, reuse existing values as defaults for a clean re-run.
+    EXISTING_VPN_BYPASS_FILE="/usr/local/bin/setup_vpn_bypass.sh"
+    DEFAULT_YOUR_INTERFACE=""
+    DEFAULT_YOUR_LAN_SUBNET=""
+    DEFAULT_YOUR_DEFAULT_GATEWAY=""
+    DEFAULT_YOUR_PUBLIC_IP=""
+    if [ -f "$EXISTING_VPN_BYPASS_FILE" ]; then
+      DEFAULT_YOUR_INTERFACE=$(grep -E '^YOUR_INTERFACE="' "$EXISTING_VPN_BYPASS_FILE" 2>/dev/null | head -n1 | sed -E 's/^YOUR_INTERFACE="(.*)"/\1/')
+      DEFAULT_YOUR_LAN_SUBNET=$(grep -E '^YOUR_LAN_SUBNET="' "$EXISTING_VPN_BYPASS_FILE" 2>/dev/null | head -n1 | sed -E 's/^YOUR_LAN_SUBNET="(.*)"/\1/')
+      DEFAULT_YOUR_DEFAULT_GATEWAY=$(grep -E '^YOUR_DEFAULT_GATEWAY="' "$EXISTING_VPN_BYPASS_FILE" 2>/dev/null | head -n1 | sed -E 's/^YOUR_DEFAULT_GATEWAY="(.*)"/\1/')
+      DEFAULT_YOUR_PUBLIC_IP=$(grep -E '^YOUR_PUBLIC_IP="' "$EXISTING_VPN_BYPASS_FILE" 2>/dev/null | head -n1 | sed -E 's/^YOUR_PUBLIC_IP="(.*)"/\1/')
+    fi
+
+    YOUR_INTERFACE=$(prompt_with_getinput "VPN bypass interface (e.g., eth0, enp1s0)" "$DEFAULT_YOUR_INTERFACE" 0 "visible" "false" "true" "false")
+    status=$?
+    if [ $status -eq 200 ]; then
+      echo "Skipping Fail2Ban VPN bypass as requested."
+      unset YOUR_INTERFACE YOUR_LAN_SUBNET YOUR_DEFAULT_GATEWAY YOUR_PUBLIC_IP
+    else
+      YOUR_LAN_SUBNET=$(prompt_with_getinput "VPN bypass LAN subnet (CIDR, e.g., 192.168.0.0/24)" "$DEFAULT_YOUR_LAN_SUBNET" 0 "visible" "false" "true" "false")
+      status=$?
+      if [ $status -eq 200 ]; then
+        echo "Skipping Fail2Ban VPN bypass as requested."
+        unset YOUR_INTERFACE YOUR_LAN_SUBNET YOUR_DEFAULT_GATEWAY YOUR_PUBLIC_IP
+      else
+        YOUR_DEFAULT_GATEWAY=$(prompt_with_getinput "VPN bypass default gateway (router IP, e.g., 192.168.0.1)" "$DEFAULT_YOUR_DEFAULT_GATEWAY" 0 "visible" "false" "true" "false")
+        status=$?
+        if [ $status -eq 200 ]; then
+          echo "Skipping Fail2Ban VPN bypass as requested."
+          unset YOUR_INTERFACE YOUR_LAN_SUBNET YOUR_DEFAULT_GATEWAY YOUR_PUBLIC_IP
+        else
+          YOUR_PUBLIC_IP=$(prompt_with_getinput "VPN bypass server LAN IP (e.g., 192.168.0.2)" "$DEFAULT_YOUR_PUBLIC_IP" 0 "visible" "false" "true" "false")
+          status=$?
+          if [ $status -eq 200 ]; then
+            echo "Skipping Fail2Ban VPN bypass as requested."
+            unset YOUR_INTERFACE YOUR_LAN_SUBNET YOUR_DEFAULT_GATEWAY YOUR_PUBLIC_IP
+          fi
+        fi
+      fi
+    fi
+  fi
+fi
 if [ "${OPTIONS[webserver]}" = "1" ]; then
   # already installed ?
   if dpkg -s apache2 php mariadb-server &>/dev/null; then
@@ -682,15 +739,24 @@ if [ -n "$SUDO_SECRET" ]; then
   fi
 fi
 if [ "${OPTIONS[fail2ban_vpn_bypass]}" = "1" ]; then
-  if dpkg -s fail2ban &>/dev/null; then
-    print_status "Fail2Ban VPN bypass already installed. Skipping... "
-    echo
-  else
+  # Values must have been collected during the '# prompts first' phase.
+  # Helper is idempotent, so safe to re-run (no duplicate rules).
+  if [ -n "${YOUR_INTERFACE:-}" ] && \
+     [ -n "${YOUR_LAN_SUBNET:-}" ] && \
+     [ -n "${YOUR_DEFAULT_GATEWAY:-}" ] && \
+     [ -n "${YOUR_PUBLIC_IP:-}" ]; then
     print_status "Installing Fail2Ban VPN bypass... "
     {
+      YOUR_INTERFACE="$YOUR_INTERFACE" \
+      YOUR_LAN_SUBNET="$YOUR_LAN_SUBNET" \
+      YOUR_DEFAULT_GATEWAY="$YOUR_DEFAULT_GATEWAY" \
+      YOUR_PUBLIC_IP="$YOUR_PUBLIC_IP" \
       bash ./helpers/vpn_bypass.sh
     } >>./log 2>&1 &
     bash ./helpers/progress.sh $!
+    echo
+  else
+    # skipped earlier (preseed values missing or user chose skip)
     echo
   fi
 fi
