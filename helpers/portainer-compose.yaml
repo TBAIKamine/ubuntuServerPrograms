@@ -10,7 +10,7 @@ services:
     ports:
       - "9443:9443"
     volumes:
-      - /run/user/1000/podman/podman.sock:/var/run/docker.sock
+      - /run/user/__UID__/podman/podman.sock:/var/run/docker.sock
       - portainer_data:/data
 volumes:
   portainer_data:

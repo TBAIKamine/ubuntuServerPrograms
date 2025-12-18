@@ -4,7 +4,7 @@ mkdir -p $DMS_DIR
 DMS_GITHUB_URL="https://raw.githubusercontent.com/docker-mailserver/docker-mailserver/master"
 wget "${DMS_GITHUB_URL}/compose.yaml" -O $DMS_DIR/compose.yaml
 wget "${DMS_GITHUB_URL}/mailserver.env" -O $DMS_DIR/mailserver.env
-chown user:user $DMS_DIR $DMS_DIR/compose.yaml $DMS_DIR/mailserver.env
+# Initial ownership set temporarily; will be updated after DMS_OWNER is determined
 unset DMS_GITHUB_URL
 
 # compose.yaml edits with sed.
@@ -40,12 +40,24 @@ sed -i '/^  mailserver:/,/^  [A-Za-z0-9_-]\+:/ { /^[[:space:]]*volumes:[[:space:
 }' "$DMS_DIR/compose.yaml"
 
 mkdir -p $DMS_DIR/docker-data/dms/{mail-data,mail-state,mail-logs,config}
-chown -R dms:dms $DMS_DIR
-chown -R dms:dms $DMS_DIR/docker-data
+
 ABS_PATH=$(dirname "$(realpath "$0")")
+
+# Determine ownership based on DMS_SYS_USER setting
+if [ "${DMS_SYS_USER:-false}" = "true" ]; then
+  DMS_OWNER="dms"
+  # Source dms.sh to create the dms system user and install the service
+  source "$ABS_PATH/dms.sh"
+else
+  DMS_OWNER="$SUDO_USER"
+fi
+
+chown -R "$DMS_OWNER:$DMS_OWNER" $DMS_DIR
+chown -R "$DMS_OWNER:$DMS_OWNER" $DMS_DIR/docker-data
+
 # custom config overrides
 cp $ABS_PATH/postfix-main.cf $DMS_DIR/docker-data/dms/config/postfix-main.cf
 cp $ABS_PATH/user-patches.sh $DMS_DIR/docker-data/dms/config/user-patches.sh
 
-chown -R dms:dms $DMS_DIR/docker-data/dms/config/{postfix-main.cf,user-patches.sh}
+chown -R "$DMS_OWNER:$DMS_OWNER" $DMS_DIR/docker-data/dms/config/{postfix-main.cf,user-patches.sh}
 chmod -R 555 $DMS_DIR/docker-data/dms/config/{postfix-main.cf,user-patches.sh}

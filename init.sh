@@ -3,6 +3,13 @@
 # ============================================================
 # PRESEED SUPPORT FOR UNATTENDED FIRST-TIME INSTALLATION
 # ============================================================
+
+# Ensure script is run with sudo
+if [ -z "${SUDO_USER:-}" ]; then
+  echo "Error: This script must be run with sudo."
+  exit 1
+fi
+
 ABS_PATH=$(dirname "$(realpath "$0")")
 
 # Use PRESEED_FILE passed from setup.sh, or build default
@@ -122,54 +129,54 @@ do_grub(){
 }
 # tty1 login
 do_tty1(){
-    print_status "Configuring tty1 login restrictions... "
-    {
-        # disable tty1 login
-        systemctl mask getty@tty1.service
-        echo "user" | tee /etc/denied_console_users
-        chmod 644 /etc/denied_console_users
-        sed -i '/#auth required/a auth required pam_listfile.so item=user sense=deny file=\/etc\/denied_console_users onerr=succeed' /etc/pam.d/login
-        # general SSH config adjustments
-        if [[ -f /home/user/.ssh/authorized_keys && -s /home/user/.ssh/authorized_keys ]]; then
-            sed -i 's|^#\?\(PasswordAuthentication\s\+\)\(yes\|no\).*$|\1no|; s|^#\?\(KbdInteractiveAuthentication\s\+\)\(yes\|no\).*$|\1no|' /etc/ssh/sshd_config
-            SSHD_CONFIG="/etc/ssh/sshd_config"
-            MATCH_LINE="Match User user"
+  print_status "Configuring tty1 login restrictions... "
+  {
+    # disable tty1 login
+    systemctl mask getty@tty1.service
+    echo "$SUDO_USER" | tee /etc/denied_console_users
+    chmod 644 /etc/denied_console_users
+    sed -i '/#auth required/a auth required pam_listfile.so item=user sense=deny file=\/etc\/denied_console_users onerr=succeed' /etc/pam.d/login
+    # general SSH config adjustments
+    if [[ -f /home/$SUDO_USER/.ssh/authorized_keys && -s /home/$SUDO_USER/.ssh/authorized_keys ]]; then
+        sed -i 's|^#\?\(PasswordAuthentication\s\+\)\(yes\|no\).*$|\1no|; s|^#\?\(KbdInteractiveAuthentication\s\+\)\(yes\|no\).*$|\1no|' /etc/ssh/sshd_config
+        SSHD_CONFIG="/etc/ssh/sshd_config"
+        MATCH_LINE="Match User $SUDO_USER"
 
-            # Case 1: block doesn't exist -> append complete block
-            if ! grep -q "^$MATCH_LINE" "$SSHD_CONFIG"; then
-                printf "\nMatch User user\n   AuthenticationMethods publickey\n" | tee -a "$SSHD_CONFIG"
+        # Case 1: block doesn't exist -> append complete block
+        if ! grep -q "^$MATCH_LINE" "$SSHD_CONFIG"; then
+            printf "\nMatch User $SUDO_USER\n   AuthenticationMethods publickey\n" | tee -a "$SSHD_CONFIG"
+        else
+            # Case 2/3: block exists -> check if it already contains the AuthenticationMethods line
+            if awk -v user="$SUDO_USER" '
+                BEGIN { in=0; found=0 }
+                $0 ~ "^Match[[:space:]]+User[[:space:]]+" user "[[:space:]]*$" { in=1; next }
+                in && /^[[:space:]]*AuthenticationMethods[[:space:]]+publickey[[:space:]]*$/ { found=1 }
+                in && /^Match[[:space:]]/ { in=0 }
+                END { if(found) exit 0; else exit 1 }
+            ' "$SSHD_CONFIG"; then
+                # Case 3: AuthenticationMethods publickey already present - do nothing
+                :
             else
-                # Case 2/3: block exists -> check if it already contains the AuthenticationMethods line
-                if awk '
-                    BEGIN { in=0; found=0 }
-                    /^Match[[:space:]]+User[[:space:]]+user[[:space:]]*$/ { in=1; next }
-                    in && /^[[:space:]]*AuthenticationMethods[[:space:]]+publickey[[:space:]]*$/ { found=1 }
-                    in && /^Match[[:space:]]/ { in=0 }
-                    END { if(found) exit 0; else exit 1 }
-                ' "$SSHD_CONFIG"; then
-                    # Case 3: AuthenticationMethods publickey already present - do nothing
-                    :
-                else
-                    # Case 2: insert AuthenticationMethods publickey into the existing Match block
-                    tmpfile=$(mktemp)
-                    awk -v ind="   " -v al="AuthenticationMethods publickey" '
-                        BEGIN { in=0; printed=0 }
-                        /^Match[[:space:]]+User[[:space:]]+user[[:space:]]*$/ { print; in=1; printed=0; next }
-                        in && /^[[:space:]]*AuthenticationMethods[[:space:]]+publickey[[:space:]]*$/ { printed=1 }
-                        in && /^Match[[:space:]]/ {
-                            if (!printed) print ind al
-                            in=0
-                        }
-                        { print }
-                        END { if (in && !printed) print ind al }
-                    ' "$SSHD_CONFIG" > "$tmpfile" && mv "$tmpfile" "$SSHD_CONFIG"
-                fi
+                # Case 2: insert AuthenticationMethods publickey into the existing Match block
+                tmpfile=$(mktemp)
+                awk -v ind="   " -v al="AuthenticationMethods publickey" -v user="$SUDO_USER" '
+                    BEGIN { in=0; printed=0 }
+                    $0 ~ "^Match[[:space:]]+User[[:space:]]+" user "[[:space:]]*$" { print; in=1; printed=0; next }
+                    in && /^[[:space:]]*AuthenticationMethods[[:space:]]+publickey[[:space:]]*$/ { printed=1 }
+                    in && /^Match[[:space:]]/ {
+                        if (!printed) print ind al
+                        in=0
+                    }
+                    { print }
+                    END { if (in && !printed) print ind al }
+                ' "$SSHD_CONFIG" > "$tmpfile" && mv "$tmpfile" "$SSHD_CONFIG"
             fi
-            systemctl restart ssh
         fi
-    } >>./log 2>&1 &
-    bash ./helpers/progress.sh $!
-    echo
+        systemctl restart ssh
+    fi
+  } >>./log 2>&1 &
+  bash ./helpers/progress.sh $!
+  echo
 }
 
 do_luks

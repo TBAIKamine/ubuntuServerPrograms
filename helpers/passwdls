@@ -12,7 +12,7 @@ case "$1" in
   on)
     # Enable passwordless sudo
     if ! grep -q "NOPASSWD" "$SUDOERS_FILE"; then
-      echo "user ALL = NOPASSWD: /usr/local/bin/sudo-broker.sh" | tee -a "$SUDOERS_FILE" > /dev/null
+      echo "__USER__ ALL = NOPASSWD: /usr/local/bin/sudo-broker.sh" | tee -a "$SUDOERS_FILE" > /dev/null
       echo "Passwordless sudo enabled"
     else
       echo "Passwordless sudo already enabled"

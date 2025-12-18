@@ -1,5 +1,11 @@
 #!/bin/bash
 
+# Ensure script is run with sudo
+if [ -z "${SUDO_USER:-}" ]; then
+  echo "Error: This script must be run with sudo."
+  exit 1
+fi
+
 # first helpers and dependencies
 ABS_PATH=$(dirname "$(realpath "$0")")
 
@@ -279,6 +285,46 @@ get_wan_ip() {
 get_wan_ip
 
 # prompts first
+if [ "${OPTIONS[docker_mailserver]}" = "1" ]; then
+  # Check if dms user already exists (indicates prior setup)
+  if id "dms" &>/dev/null; then
+    # dms user exists => ask if wants to keep using it (preseed does NOT apply to reinstalls)
+    USE_DMS_USER=$(prompt_with_getinput "DMS system user 'dms' already exists. Continue using it? [y/n]" "y" 10)
+    status=$?
+    if [ $status -eq 200 ] || [ -z "$USE_DMS_USER" ]; then
+      USE_DMS_USER="y"
+    fi
+    if [[ "$USE_DMS_USER" =~ ^[Yy]$ ]]; then
+      DMS_SYS_USER=true
+    else
+      DMS_SYS_USER=false
+    fi
+  else
+    # not set up => check preseed first, then prompt
+    if [ "$SETUP_PRESEED" = true ] && [ -n "${PRESEED_DMS_SYS_USER:-}" ]; then
+      if [ "${PRESEED_DMS_SYS_USER}" = "1" ]; then
+        DMS_SYS_USER=true
+        echo "Using preseeded DMS system user setting: enabled"
+      else
+        DMS_SYS_USER=false
+        echo "Using preseeded DMS system user setting: disabled"
+      fi
+    else
+      echo "It is encouraged to create a dedicated system user 'dms' to run the DMS container."
+      echo "This provides better security and isolation for the mail server."
+      CREATE_DMS_USER=$(prompt_with_getinput "Create system user 'dms' for Docker Mailserver? [y/n]" "y" 10)
+      status=$?
+      if [ $status -eq 200 ] || [ -z "$CREATE_DMS_USER" ]; then
+        CREATE_DMS_USER="y"
+      fi
+      if [[ "$CREATE_DMS_USER" =~ ^[Yy]$ ]]; then
+        DMS_SYS_USER=true
+      else
+        DMS_SYS_USER=false
+      fi
+    fi
+  fi
+fi
 if [ "${OPTIONS[passwordless_sudoer]}" = "1" ]; then
   # already installed ?
   if [ -x "/usr/local/bin/passwdls" ]; then
@@ -913,7 +959,7 @@ if [ "${OPTIONS[wp_cli]}" = "1" ]; then
       curl -O https://raw.githubusercontent.com/wp-cli/builds/gh-pages/phar/wp-cli.phar
       chmod +x wp-cli.phar
       mv wp-cli.phar /usr/local/bin/wp
-      chown user:user /usr/local/bin/wp
+      chown $SUDO_USER:$SUDO_USER /usr/local/bin/wp
     } >>./log 2>&1 &
     bash ./helpers/progress.sh $!
     echo
@@ -921,7 +967,7 @@ if [ "${OPTIONS[wp_cli]}" = "1" ]; then
 fi
 if [ "${OPTIONS[pyenv_python]}" = "1" ]; then
   # Check pyenv/Python from the perspective of the normal user, not root
-  if [ -z "$SUDO_USER" ]; then
+  if [ -n "$SUDO_USER" ]; then
     if sudo -u "$SUDO_USER" bash -lc '
       export PYENV_ROOT="$HOME/.pyenv"
       [[ -d "$PYENV_ROOT/bin" ]] && export PATH="$PYENV_ROOT/bin:$PATH"
@@ -937,12 +983,12 @@ if [ "${OPTIONS[pyenv_python]}" = "1" ]; then
         apt install make build-essential libssl-dev zlib1g-dev \
         libbz2-dev libreadline-dev libsqlite3-dev curl git \
         libncursesw5-dev xz-utils tk-dev libxml2-dev libxmlsec1-dev libffi-dev liblzma-dev -y
-        sudo -u user bash -c 'curl -fsSL https://pyenv.run | bash'
-        cat ./helpers/pyenv_profile.txt >> /home/user/.bashrc
-        echo "export PYENV_ROOT=\"/home/user/.pyenv\"" >> /home/user/.bashrc
-        [[ -d /home/user/.pyenv/bin ]] && echo "export PATH=\"$PYENV_ROOT/bin:\$PATH\"" >> /home/user/.bashrc
+        sudo -u $SUDO_USER bash -c 'curl -fsSL https://pyenv.run | bash'
+        cat ./helpers/pyenv_profile.txt >> /home/$SUDO_USER/.bashrc
+        echo "export PYENV_ROOT=\"/home/$SUDO_USER/.pyenv\"" >> /home/$SUDO_USER/.bashrc
+        [[ -d /home/$SUDO_USER/.pyenv/bin ]] && echo "export PATH=\"$PYENV_ROOT/bin:\$PATH\"" >> /home/$SUDO_USER/.bashrc
         hash -r #refresh environment
-        sudo -u user bash -l -c '
+        sudo -u $SUDO_USER bash -l -c '
             export PYENV_ROOT="$HOME/.pyenv"
             [[ -d $PYENV_ROOT/bin ]] && export PATH="$PYENV_ROOT/bin:$PATH"
             eval "$(pyenv init - bash)"
@@ -975,7 +1021,7 @@ if [ "${OPTIONS[lazydocker]}" = "1" ]; then
     print_status "Installing LazyDocker... "
     {
       export DIR=/usr/bin; curl -sL https://raw.githubusercontent.com/jesseduffield/lazydocker/master/scripts/install_update_linux.sh | sudo DIR=$DIR bash
-      chown user:user /usr/bin/lazydocker
+      chown $SUDO_USER:$SUDO_USER /usr/bin/lazydocker
     } >>./log 2>&1 &
     bash ./helpers/progress.sh $!
     echo
@@ -990,11 +1036,38 @@ if [ "${OPTIONS[portainer]}" = "1" ]; then
     {
       podman volume create portainer_data
       if [ -n "$FQDN" ]; then
-        #TODO: check here if a cert will be issued
         a2sitemgr -d "portainer.$FQDN" --mode proxypass -s -p 9443
       fi
-      mkdir -p /opt/compose/portainer
-      cp $ABS_PATH/helpers/portainer-compose.yaml /opt/compose/portainer/compose.yaml
+      mkdir -p /opt/compose/portainer/agents
+      # If a main FQDN was provided, expand the placeholder in the template.
+      # Otherwise remove the TRUSTED_ORIGINS entry to avoid invalid env var.
+      SUDO_UID=$(id -u "$SUDO_USER")
+      if [ -n "$FQDN" ]; then
+        sed -e "s|\$FQDN|$FQDN|g" -e "s|__UID__|$SUDO_UID|g" "$ABS_PATH/helpers/portainer-compose.yaml" > /opt/compose/portainer/compose.yaml
+      else
+        tmpfile=$(mktemp)
+        sed "s|__UID__|$SUDO_UID|g" "$ABS_PATH/helpers/portainer-compose.yaml" | grep -v 'TRUSTED_ORIGINS' > "$tmpfile"
+        # If the environment block is left without any `-` entries, remove the environment: line too.
+        awk '
+        {
+          if ($0 ~ /^[[:space:]]*environment:/) {
+            if (getline nxt) {
+              if (nxt ~ /^[[:space:]]*-/) {
+                print $0
+                print nxt
+              } else {
+                print nxt
+              }
+            }
+          } else {
+            print $0
+          }
+        }
+        ' "$tmpfile" > /opt/compose/portainer/compose.yaml
+        rm -f "$tmpfile"
+      fi
+      cp $ABS_PATH/helpers/portainer-agent.yaml /opt/compose/portainer/agents/compose.yaml
+      cp $ABS_PATH/helpers/portainer-readme.md /opt/compose/portainer/agents/README.md
     } >>./log 2>&1 &
     bash ./helpers/progress.sh $!
     echo
@@ -1006,8 +1079,8 @@ if [ "${OPTIONS[docker_mailserver]}" = "1" ]; then
     echo
   else
     print_status "Installing Docker Mailserver... "
-    # pass DMS_EMAIL/DMS_HOSTNAME into the helper's environment so it can use them
-    DMS_EMAIL="$DMS_EMAIL" DMS_HOSTNAME="$DMS_HOSTNAME" bash ./helpers/dms_install.sh >>./log 2>&1 &
+    # pass DMS_EMAIL/DMS_HOSTNAME/DMS_SYS_USER into the helper's environment so it can use them
+    DMS_EMAIL="$DMS_EMAIL" DMS_HOSTNAME="$DMS_HOSTNAME" DMS_SYS_USER="${DMS_SYS_USER:-false}" FQDN="${FQDN:-}" bash ./helpers/dms_install.sh >>./log 2>&1 &
     bash ./helpers/progress.sh $!
     echo
   fi
@@ -1038,11 +1111,10 @@ if [ "${OPTIONS[gitea]}" = "1" ]; then
     {
       mkdir -p /opt/compose/gitea/gitea
       cd /opt/compose/gitea
-      chown user:user *
+      chown $SUDO_USER:$SUDO_USER *
       chmod 755 -R gitea
       cp $ABS_PATH/helpers/gitea-compose.yaml /opt/compose/gitea/compose.yaml
       if [ -n "$FQDN" ]; then
-        #check if a cert will be issued
         a2sitemgr -d "gitea.$FQDN" --mode proxypass -p 3000
       fi
     } >>./log 2>&1 &
@@ -1065,7 +1137,6 @@ if [ "${OPTIONS[n8n]}" = "1" ]; then
       mkdir -p /opt/compose/n8n
       cp $ABS_PATH/helpers/n8n-compose.yaml /opt/compose/n8n/compose.yaml
       if [ -n "$FQDN" ]; then
-        #TODO: check if a cert will be issued
         a2sitemgr -d "n8n.$FQDN" --mode proxypass -p 5678
       fi
     } >>./log 2>&1 &
