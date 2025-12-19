@@ -1,6 +1,8 @@
 version: "3.8"
 services:
   n8n:
+    logging:
+      driver: journald
     image: docker.n8n.io/n8nio/n8n
     container_name: n8n
     restart: always

@@ -1,6 +1,8 @@
 version: "3.8"
 services:
   portainer_agent:
+    logging:
+      driver: journald
     image: portainer/agent:2.33.6
     container_name: portainer_agent
     restart: always

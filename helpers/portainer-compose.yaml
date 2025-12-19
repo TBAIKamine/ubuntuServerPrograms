@@ -1,6 +1,8 @@
 version: "3.8"
 services:
   portainer:
+    logging:
+        driver: journald
     image: portainer/portainer-ce:lts
     container_name: portainer
     restart: always
