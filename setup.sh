@@ -325,6 +325,86 @@ if [ "${OPTIONS[docker_mailserver]}" = "1" ]; then
     fi
   fi
 fi
+if [ "${OPTIONS[gitea]}" = "1" ]; then
+  # Check if gitea user already exists (indicates prior setup)
+  if id "gitea" &>/dev/null; then
+    # gitea user exists => ask if wants to keep using it (preseed does NOT apply to reinstalls)
+    USE_GITEA_USER=$(prompt_with_getinput "Gitea system user 'gitea' already exists. Continue using it? [y/n]" "y" 10)
+    status=$?
+    if [ $status -eq 200 ] || [ -z "$USE_GITEA_USER" ]; then
+      USE_GITEA_USER="y"
+    fi
+    if [[ "$USE_GITEA_USER" =~ ^[Yy]$ ]]; then
+      GITEA_SYS_USER=true
+    else
+      GITEA_SYS_USER=false
+    fi
+  else
+    # not set up => check preseed first, then prompt
+    if [ "$SETUP_PRESEED" = true ] && [ -n "${PRESEED_GITEA_SYS_USER:-}" ]; then
+      if [ "${PRESEED_GITEA_SYS_USER}" = "1" ]; then
+        GITEA_SYS_USER=true
+        echo "Using preseeded Gitea system user setting: enabled"
+      else
+        GITEA_SYS_USER=false
+        echo "Using preseeded Gitea system user setting: disabled"
+      fi
+    else
+      echo "It is encouraged to create a dedicated system user 'gitea' to run the Gitea container."
+      echo "This provides better security and isolation for the git server."
+      CREATE_GITEA_USER=$(prompt_with_getinput "Create system user 'gitea' for Gitea? [y/n]" "y" 10)
+      status=$?
+      if [ $status -eq 200 ] || [ -z "$CREATE_GITEA_USER" ]; then
+        CREATE_GITEA_USER="y"
+      fi
+      if [[ "$CREATE_GITEA_USER" =~ ^[Yy]$ ]]; then
+        GITEA_SYS_USER=true
+      else
+        GITEA_SYS_USER=false
+      fi
+    fi
+  fi
+fi
+if [ "${OPTIONS[n8n]}" = "1" ]; then
+  # Check if n8n user already exists (indicates prior setup)
+  if id "n8n" &>/dev/null; then
+    # n8n user exists => ask if wants to keep using it (preseed does NOT apply to reinstalls)
+    USE_N8N_USER=$(prompt_with_getinput "n8n system user 'n8n' already exists. Continue using it? [y/n]" "y" 10)
+    status=$?
+    if [ $status -eq 200 ] || [ -z "$USE_N8N_USER" ]; then
+      USE_N8N_USER="y"
+    fi
+    if [[ "$USE_N8N_USER" =~ ^[Yy]$ ]]; then
+      N8N_SYS_USER=true
+    else
+      N8N_SYS_USER=false
+    fi
+  else
+    # not set up => check preseed first, then prompt
+    if [ "$SETUP_PRESEED" = true ] && [ -n "${PRESEED_N8N_SYS_USER:-}" ]; then
+      if [ "${PRESEED_N8N_SYS_USER}" = "1" ]; then
+        N8N_SYS_USER=true
+        echo "Using preseeded n8n system user setting: enabled"
+      else
+        N8N_SYS_USER=false
+        echo "Using preseeded n8n system user setting: disabled"
+      fi
+    else
+      echo "It is encouraged to create a dedicated system user 'n8n' to run the n8n container."
+      echo "This provides better security and isolation for the automation platform."
+      CREATE_N8N_USER=$(prompt_with_getinput "Create system user 'n8n' for n8n? [y/n]" "y" 10)
+      status=$?
+      if [ $status -eq 200 ] || [ -z "$CREATE_N8N_USER" ]; then
+        CREATE_N8N_USER="y"
+      fi
+      if [[ "$CREATE_N8N_USER" =~ ^[Yy]$ ]]; then
+        N8N_SYS_USER=true
+      else
+        N8N_SYS_USER=false
+      fi
+    fi
+  fi
+fi
 if [ "${OPTIONS[passwordless_sudoer]}" = "1" ]; then
   # already installed ?
   if [ -x "/usr/local/bin/passwdls" ]; then
@@ -1108,16 +1188,7 @@ if [ "${OPTIONS[gitea]}" = "1" ]; then
     echo
   else
     print_status "Installing Gitea... "
-    {
-      mkdir -p /opt/compose/gitea/gitea
-      cd /opt/compose/gitea
-      chown $SUDO_USER:$SUDO_USER *
-      chmod 755 -R gitea
-      cp $ABS_PATH/helpers/gitea-compose.yaml /opt/compose/gitea/compose.yaml
-      if [ -n "$FQDN" ]; then
-        a2sitemgr -d "gitea.$FQDN" --mode proxypass -p 3000
-      fi
-    } >>./log 2>&1 &
+    FQDN="$FQDN" GITEA_SYS_USER="${GITEA_SYS_USER:-false}" bash ./helpers/gitea_install.sh >>./log 2>&1 &
     bash ./helpers/progress.sh $!
     echo
   fi
@@ -1132,14 +1203,7 @@ if [ "${OPTIONS[n8n]}" = "1" ]; then
     echo
   else
     print_status "Installing n8n... "
-    {
-      podman volume create n8n_data
-      mkdir -p /opt/compose/n8n
-      cp $ABS_PATH/helpers/n8n-compose.yaml /opt/compose/n8n/compose.yaml
-      if [ -n "$FQDN" ]; then
-        a2sitemgr -d "n8n.$FQDN" --mode proxypass -p 5678
-      fi
-    } >>./log 2>&1 &
+    FQDN="$FQDN" N8N_SYS_USER="${N8N_SYS_USER:-false}" bash ./helpers/n8n_install.sh >>./log 2>&1 &
     bash ./helpers/progress.sh $!
     echo
   fi
@@ -1156,4 +1220,5 @@ if [ "${OPTIONS[grafana_otel]}" = "1" ]; then
     echo "Installing Grafana with OpenTelemetry LGTM stack..."
     # TODO: Implement Grafana + OTEL installation logic
 fi
+# TODO: must have containers: supabase, appwrite
 echo -e "\nSetup complete!"
