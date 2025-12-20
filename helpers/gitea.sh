@@ -21,8 +21,8 @@ chown -R "$USER:$USER" "$HOME_DIR"
 
 loginctl enable-linger "$USER"
 
-grep -q "^$USER:" /etc/subuid || usermod --add-subuids 300000-365535 "$USER"
-grep -q "^$USER:" /etc/subgid || usermod --add-subgids 300000-365535 "$USER"
+grep -q "^$USER:" /etc/subuid || usermod --add-subuids 65536 "$USER"
+grep -q "^$USER:" /etc/subgid || usermod --add-subgids 65536 "$USER"
 
 chown -R "$USER:$USER" "$COMPOSE_DIR"
 

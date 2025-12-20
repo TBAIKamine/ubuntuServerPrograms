@@ -21,8 +21,8 @@ chown -R "$USER:$USER" "$HOME_DIR"
 
 loginctl enable-linger "$USER"
 
-grep -q "^$USER:" /etc/subuid || usermod --add-subuids 400000-465535 "$USER"
-grep -q "^$USER:" /etc/subgid || usermod --add-subgids 400000-465535 "$USER"
+grep -q "^$USER:" /etc/subuid || usermod --add-subuids 65536 "$USER"
+grep -q "^$USER:" /etc/subgid || usermod --add-subgids 65536 "$USER"
 
 # Create the n8n_data volume as the n8n user
 sudo -u "$USER" -H bash -c "

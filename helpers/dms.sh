@@ -26,8 +26,8 @@ setfacl -R -m u:$USER:rx /etc/letsencrypt/archive
 setfacl -R -d -m u:$USER:rx /etc/letsencrypt/live
 setfacl -R -d -m u:$USER:rx /etc/letsencrypt/archive
 
-grep -q "^$USER:" /etc/subuid || usermod --add-subuids 200000-265535 "$USER"
-grep -q "^$USER:" /etc/subgid || usermod --add-subgids 200000-265535 "$USER"
+grep -q "^$USER:" /etc/subuid || usermod --add-subuids 65536 "$USER"
+grep -q "^$USER:" /etc/subgid || usermod --add-subgids 65536 "$USER"
 
 chown -R "$USER:$USER" "$COMPOSE_DIR"
 
