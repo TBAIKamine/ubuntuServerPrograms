@@ -285,126 +285,6 @@ get_wan_ip() {
 get_wan_ip
 
 # prompts first
-if [ "${OPTIONS[docker_mailserver]}" = "1" ]; then
-  # Check if dms user already exists (indicates prior setup)
-  if id "dms" &>/dev/null; then
-    # dms user exists => ask if wants to keep using it (preseed does NOT apply to reinstalls)
-    USE_DMS_USER=$(prompt_with_getinput "DMS system user 'dms' already exists. Continue using it? [y/n]" "y" 10)
-    status=$?
-    if [ $status -eq 200 ] || [ -z "$USE_DMS_USER" ]; then
-      USE_DMS_USER="y"
-    fi
-    if [[ "$USE_DMS_USER" =~ ^[Yy]$ ]]; then
-      DMS_SYS_USER=true
-    else
-      DMS_SYS_USER=false
-    fi
-  else
-    # not set up => check preseed first, then prompt
-    if [ "$SETUP_PRESEED" = true ] && [ -n "${PRESEED_DMS_SYS_USER:-}" ]; then
-      if [ "${PRESEED_DMS_SYS_USER}" = "1" ]; then
-        DMS_SYS_USER=true
-        echo "Using preseeded DMS system user setting: enabled"
-      else
-        DMS_SYS_USER=false
-        echo "Using preseeded DMS system user setting: disabled"
-      fi
-    else
-      echo "It is encouraged to create a dedicated system user 'dms' to run the DMS container."
-      echo "This provides better security and isolation for the mail server."
-      CREATE_DMS_USER=$(prompt_with_getinput "Create system user 'dms' for Docker Mailserver? [y/n]" "y" 10)
-      status=$?
-      if [ $status -eq 200 ] || [ -z "$CREATE_DMS_USER" ]; then
-        CREATE_DMS_USER="y"
-      fi
-      if [[ "$CREATE_DMS_USER" =~ ^[Yy]$ ]]; then
-        DMS_SYS_USER=true
-      else
-        DMS_SYS_USER=false
-      fi
-    fi
-  fi
-fi
-if [ "${OPTIONS[gitea]}" = "1" ]; then
-  # Check if gitea user already exists (indicates prior setup)
-  if id "gitea" &>/dev/null; then
-    # gitea user exists => ask if wants to keep using it (preseed does NOT apply to reinstalls)
-    USE_GITEA_USER=$(prompt_with_getinput "Gitea system user 'gitea' already exists. Continue using it? [y/n]" "y" 10)
-    status=$?
-    if [ $status -eq 200 ] || [ -z "$USE_GITEA_USER" ]; then
-      USE_GITEA_USER="y"
-    fi
-    if [[ "$USE_GITEA_USER" =~ ^[Yy]$ ]]; then
-      GITEA_SYS_USER=true
-    else
-      GITEA_SYS_USER=false
-    fi
-  else
-    # not set up => check preseed first, then prompt
-    if [ "$SETUP_PRESEED" = true ] && [ -n "${PRESEED_GITEA_SYS_USER:-}" ]; then
-      if [ "${PRESEED_GITEA_SYS_USER}" = "1" ]; then
-        GITEA_SYS_USER=true
-        echo "Using preseeded Gitea system user setting: enabled"
-      else
-        GITEA_SYS_USER=false
-        echo "Using preseeded Gitea system user setting: disabled"
-      fi
-    else
-      echo "It is encouraged to create a dedicated system user 'gitea' to run the Gitea container."
-      echo "This provides better security and isolation for the git server."
-      CREATE_GITEA_USER=$(prompt_with_getinput "Create system user 'gitea' for Gitea? [y/n]" "y" 10)
-      status=$?
-      if [ $status -eq 200 ] || [ -z "$CREATE_GITEA_USER" ]; then
-        CREATE_GITEA_USER="y"
-      fi
-      if [[ "$CREATE_GITEA_USER" =~ ^[Yy]$ ]]; then
-        GITEA_SYS_USER=true
-      else
-        GITEA_SYS_USER=false
-      fi
-    fi
-  fi
-fi
-if [ "${OPTIONS[n8n]}" = "1" ]; then
-  # Check if n8n user already exists (indicates prior setup)
-  if id "n8n" &>/dev/null; then
-    # n8n user exists => ask if wants to keep using it (preseed does NOT apply to reinstalls)
-    USE_N8N_USER=$(prompt_with_getinput "n8n system user 'n8n' already exists. Continue using it? [y/n]" "y" 10)
-    status=$?
-    if [ $status -eq 200 ] || [ -z "$USE_N8N_USER" ]; then
-      USE_N8N_USER="y"
-    fi
-    if [[ "$USE_N8N_USER" =~ ^[Yy]$ ]]; then
-      N8N_SYS_USER=true
-    else
-      N8N_SYS_USER=false
-    fi
-  else
-    # not set up => check preseed first, then prompt
-    if [ "$SETUP_PRESEED" = true ] && [ -n "${PRESEED_N8N_SYS_USER:-}" ]; then
-      if [ "${PRESEED_N8N_SYS_USER}" = "1" ]; then
-        N8N_SYS_USER=true
-        echo "Using preseeded n8n system user setting: enabled"
-      else
-        N8N_SYS_USER=false
-        echo "Using preseeded n8n system user setting: disabled"
-      fi
-    else
-      echo "It is encouraged to create a dedicated system user 'n8n' to run the n8n container."
-      echo "This provides better security and isolation for the automation platform."
-      CREATE_N8N_USER=$(prompt_with_getinput "Create system user 'n8n' for n8n? [y/n]" "y" 10)
-      status=$?
-      if [ $status -eq 200 ] || [ -z "$CREATE_N8N_USER" ]; then
-        CREATE_N8N_USER="y"
-      fi
-      if [[ "$CREATE_N8N_USER" =~ ^[Yy]$ ]]; then
-        N8N_SYS_USER=true
-      else
-        N8N_SYS_USER=false
-      fi
-    fi
-  fi
-fi
 if [ "${OPTIONS[passwordless_sudoer]}" = "1" ]; then
   # already installed ?
   if [ -x "/usr/local/bin/passwdls" ]; then
@@ -511,46 +391,6 @@ if [ "${OPTIONS[webserver]}" = "1" ]; then
   else
     # first-time install: always offer the shared FQDN prompt when apache_domains is enabled
     prompt_main_fqdn_if_needed
-  fi
-fi
-if [ "${OPTIONS[phpmyadmin]}" = "1" ]; then
-  # already installed ?
-  if dpkg -s phpmyadmin &>/dev/null; then
-    # yes => ask if wants to re-install ? (preseed does NOT apply to reinstalls)
-    REINSTALL_PMA=$(prompt_with_getinput "phpMyAdmin already installed. Re-install and reconfigure DB user password? [y/n]" "n" 10)
-    status=$?
-    if [ $status -eq 200 ] || [ -z "$REINSTALL_PMA" ]; then
-      REINSTALL_PMA="n"
-    fi
-    if [[ "$REINSTALL_PMA" =~ ^[Yy]$ ]]; then
-      while true; do
-        PHPMYADMIN_SECRET=$(prompt_with_getinput "Set phpMyAdmin database user password" "" 10 "dotted" "true" "true" "false")
-        status=$?
-        if [ $status -eq 200 ] || [ -z "$PHPMYADMIN_SECRET" ]; then
-          unset PHPMYADMIN_SECRET
-          break
-        fi
-        break
-      done
-    else
-      unset PHPMYADMIN_SECRET
-    fi
-  else
-    # not installed => check preseed first, then prompt
-    if [ "$SETUP_PRESEED" = true ] && [ -n "${PRESEED_PHPMYADMIN_SECRET:-}" ]; then
-      PHPMYADMIN_SECRET="$PRESEED_PHPMYADMIN_SECRET"
-      echo "Using preseeded phpMyAdmin database user password."
-    else
-      while true; do
-        PHPMYADMIN_SECRET=$(prompt_with_getinput "Set phpMyAdmin database user password" "" 10 "dotted" "true" "true" "false")
-        status=$?
-        if [ $status -eq 200 ] || [ -z "$PHPMYADMIN_SECRET" ]; then
-          unset PHPMYADMIN_SECRET
-          break
-        fi
-        break
-      done
-    fi
   fi
 fi
 if [ "${OPTIONS[certbot]}" = "1" ]; then
@@ -704,6 +544,73 @@ if [ "${OPTIONS[certbot]}" = "1" ]; then
           fi
         fi
       fi
+      
+      # Prompt for DNS setup (only when Namecheap credentials are provided)
+      if [ -n "${NC_USERNAME:-}" ] && [ -n "${NC_API_KEY:-}" ]; then
+        # Check for preseed value first
+        if [ "$SETUP_PRESEED" = true ] && [ -n "${PRESEED_SETUP_DNS:-}" ]; then
+          SETUP_DNS="$PRESEED_SETUP_DNS"
+          echo "Using preseeded DNS setup choice: $SETUP_DNS"
+        else
+          SETUP_DNS=$(prompt_with_getinput "Set initial DNS records for all Namecheap domains? [Y/n]" "Y" 10)
+          status=$?
+          if [ $status -eq 200 ] || [ -z "$SETUP_DNS" ]; then
+            SETUP_DNS="Y"
+          fi
+        fi
+        
+        # For interactive mode, we'll handle fqdnmgr prompts during install phase
+        # For preseed mode, store the selection
+        if [[ "$SETUP_DNS" =~ ^[Yy] ]]; then
+          if [ "$SETUP_PRESEED" = true ] && [ -n "${PRESEED_DNS_SELECTION:-}" ]; then
+            DNS_SELECTION="$PRESEED_DNS_SELECTION"
+            echo "Using preseeded DNS selection: $DNS_SELECTION"
+          fi
+          RUN_DNS_SETUP=true
+        else
+          RUN_DNS_SETUP=false
+        fi
+      fi
+    fi
+  fi
+fi
+if [ "${OPTIONS[phpmyadmin]}" = "1" ]; then
+  # already installed ?
+  if dpkg -s phpmyadmin &>/dev/null; then
+    # yes => ask if wants to re-install ? (preseed does NOT apply to reinstalls)
+    REINSTALL_PMA=$(prompt_with_getinput "phpMyAdmin already installed. Re-install and reconfigure DB user password? [y/n]" "n" 10)
+    status=$?
+    if [ $status -eq 200 ] || [ -z "$REINSTALL_PMA" ]; then
+      REINSTALL_PMA="n"
+    fi
+    if [[ "$REINSTALL_PMA" =~ ^[Yy]$ ]]; then
+      while true; do
+        PHPMYADMIN_SECRET=$(prompt_with_getinput "Set phpMyAdmin database user password" "" 10 "dotted" "true" "true" "false")
+        status=$?
+        if [ $status -eq 200 ] || [ -z "$PHPMYADMIN_SECRET" ]; then
+          unset PHPMYADMIN_SECRET
+          break
+        fi
+        break
+      done
+    else
+      unset PHPMYADMIN_SECRET
+    fi
+  else
+    # not installed => check preseed first, then prompt
+    if [ "$SETUP_PRESEED" = true ] && [ -n "${PRESEED_PHPMYADMIN_SECRET:-}" ]; then
+      PHPMYADMIN_SECRET="$PRESEED_PHPMYADMIN_SECRET"
+      echo "Using preseeded phpMyAdmin database user password."
+    else
+      while true; do
+        PHPMYADMIN_SECRET=$(prompt_with_getinput "Set phpMyAdmin database user password" "" 10 "dotted" "true" "true" "false")
+        status=$?
+        if [ $status -eq 200 ] || [ -z "$PHPMYADMIN_SECRET" ]; then
+          unset PHPMYADMIN_SECRET
+          break
+        fi
+        break
+      done
     fi
   fi
 fi
@@ -840,6 +747,124 @@ if [ "${OPTIONS[docker_mailserver]}" = "1" ]; then
       fi
     done
   fi
+  # Check if dms user already exists (indicates prior setup)
+  if id "dms" &>/dev/null; then
+    # dms user exists => ask if wants to keep using it (preseed does NOT apply to reinstalls)
+    USE_DMS_USER=$(prompt_with_getinput "DMS system user 'dms' already exists. Continue using it? [y/n]" "y" 10)
+    status=$?
+    if [ $status -eq 200 ] || [ -z "$USE_DMS_USER" ]; then
+      USE_DMS_USER="y"
+    fi
+    if [[ "$USE_DMS_USER" =~ ^[Yy]$ ]]; then
+      DMS_SYS_USER=true
+    else
+      DMS_SYS_USER=false
+    fi
+  else
+    # not set up => check preseed first, then prompt
+    if [ "$SETUP_PRESEED" = true ] && [ -n "${PRESEED_DMS_SYS_USER:-}" ]; then
+      if [ "${PRESEED_DMS_SYS_USER}" = "1" ]; then
+        DMS_SYS_USER=true
+        echo "Using preseeded DMS system user setting: enabled"
+      else
+        DMS_SYS_USER=false
+        echo "Using preseeded DMS system user setting: disabled"
+      fi
+    else
+      echo "It is encouraged to create a dedicated system user 'dms' to run the DMS container."
+      echo "This provides better security and isolation for the mail server."
+      CREATE_DMS_USER=$(prompt_with_getinput "Create system user 'dms' for Docker Mailserver? [y/n]" "y" 10)
+      status=$?
+      if [ $status -eq 200 ] || [ -z "$CREATE_DMS_USER" ]; then
+        CREATE_DMS_USER="y"
+      fi
+      if [[ "$CREATE_DMS_USER" =~ ^[Yy]$ ]]; then
+        DMS_SYS_USER=true
+      else
+        DMS_SYS_USER=false
+      fi
+    fi
+  fi
+fi
+if [ "${OPTIONS[gitea]}" = "1" ]; then
+  # Check if gitea user already exists (indicates prior setup)
+  if id "gitea" &>/dev/null; then
+    # gitea user exists => ask if wants to keep using it (preseed does NOT apply to reinstalls)
+    USE_GITEA_USER=$(prompt_with_getinput "Gitea system user 'gitea' already exists. Continue using it? [y/n]" "y" 10)
+    status=$?
+    if [ $status -eq 200 ] || [ -z "$USE_GITEA_USER" ]; then
+      USE_GITEA_USER="y"
+    fi
+    if [[ "$USE_GITEA_USER" =~ ^[Yy]$ ]]; then
+      GITEA_SYS_USER=true
+    else
+      GITEA_SYS_USER=false
+    fi
+  else
+    # not set up => check preseed first, then prompt
+    if [ "$SETUP_PRESEED" = true ] && [ -n "${PRESEED_GITEA_SYS_USER:-}" ]; then
+      if [ "${PRESEED_GITEA_SYS_USER}" = "1" ]; then
+        GITEA_SYS_USER=true
+        echo "Using preseeded Gitea system user setting: enabled"
+      else
+        GITEA_SYS_USER=false
+        echo "Using preseeded Gitea system user setting: disabled"
+      fi
+    else
+      echo "It is encouraged to create a dedicated system user 'gitea' to run the Gitea container."
+      echo "This provides better security and isolation for the git server."
+      CREATE_GITEA_USER=$(prompt_with_getinput "Create system user 'gitea' for Gitea? [y/n]" "y" 10)
+      status=$?
+      if [ $status -eq 200 ] || [ -z "$CREATE_GITEA_USER" ]; then
+        CREATE_GITEA_USER="y"
+      fi
+      if [[ "$CREATE_GITEA_USER" =~ ^[Yy]$ ]]; then
+        GITEA_SYS_USER=true
+      else
+        GITEA_SYS_USER=false
+      fi
+    fi
+  fi
+fi
+if [ "${OPTIONS[n8n]}" = "1" ]; then
+  # Check if n8n user already exists (indicates prior setup)
+  if id "n8n" &>/dev/null; then
+    # n8n user exists => ask if wants to keep using it (preseed does NOT apply to reinstalls)
+    USE_N8N_USER=$(prompt_with_getinput "n8n system user 'n8n' already exists. Continue using it? [y/n]" "y" 10)
+    status=$?
+    if [ $status -eq 200 ] || [ -z "$USE_N8N_USER" ]; then
+      USE_N8N_USER="y"
+    fi
+    if [[ "$USE_N8N_USER" =~ ^[Yy]$ ]]; then
+      N8N_SYS_USER=true
+    else
+      N8N_SYS_USER=false
+    fi
+  else
+    # not set up => check preseed first, then prompt
+    if [ "$SETUP_PRESEED" = true ] && [ -n "${PRESEED_N8N_SYS_USER:-}" ]; then
+      if [ "${PRESEED_N8N_SYS_USER}" = "1" ]; then
+        N8N_SYS_USER=true
+        echo "Using preseeded n8n system user setting: enabled"
+      else
+        N8N_SYS_USER=false
+        echo "Using preseeded n8n system user setting: disabled"
+      fi
+    else
+      echo "It is encouraged to create a dedicated system user 'n8n' to run the n8n container."
+      echo "This provides better security and isolation for the automation platform."
+      CREATE_N8N_USER=$(prompt_with_getinput "Create system user 'n8n' for n8n? [y/n]" "y" 10)
+      status=$?
+      if [ $status -eq 200 ] || [ -z "$CREATE_N8N_USER" ]; then
+        CREATE_N8N_USER="y"
+      fi
+      if [[ "$CREATE_N8N_USER" =~ ^[Yy]$ ]]; then
+        N8N_SYS_USER=true
+      else
+        N8N_SYS_USER=false
+      fi
+    fi
+  fi
 fi
 
 print_status "Updating package lists and upgrading existing packages, this will take a moment... "
@@ -965,34 +990,17 @@ if [ -n "${NC_USERNAME:-}" ] && [ -n "${NC_API_KEY:-}" ]; then
       fqdncredmgr add namecheap.com "$NC_USERNAME" -p "$NC_API_KEY"
     fi
   } >>./log 2>&1
-  # Wait for credentials to be saved before prompting for DNS init
+  # Wait for credentials to be saved before running DNS init
   wait
   
-  # Prompt to set initial DNS records for Namecheap domains
-  if [ -n "$NC_USERNAME" ] && [ -n "$NC_API_KEY" ] && command -v fqdnmgr &>/dev/null; then
-    # Check for preseed value first
-    if [ "$SETUP_PRESEED" = true ] && [ -n "${PRESEED_SETUP_DNS:-}" ]; then
-      SETUP_DNS="$PRESEED_SETUP_DNS"
-      echo "Using preseeded DNS setup choice: $SETUP_DNS"
+  # Run DNS setup if user opted in during prompts phase
+  if [ "${RUN_DNS_SETUP:-false}" = true ] && command -v fqdnmgr &>/dev/null; then
+    if [ "$SETUP_PRESEED" = true ] && [ -n "${DNS_SELECTION:-}" ]; then
+      echo "Starting DNS initialization for namecheap domains in background..."
+      fqdnmgr setInitDNSRecords -r namecheap.com >>./log 2>&1 &
     else
-      SETUP_DNS=$(prompt_with_getinput "Set initial DNS records for all Namecheap domains? [Y/n]" "Y" 10)
-      status=$?
-      if [ $status -eq 200 ] || [ -z "$SETUP_DNS" ]; then
-        SETUP_DNS="Y"
-      fi
-    fi
-    
-    if [[ "$SETUP_DNS" =~ ^[Yy] ]]; then
-      # Check for preseed value first
-      if [ "$SETUP_PRESEED" = true ] && [ -n "${PRESEED_DNS_SELECTION:-}" ]; then
-        DNS_SELECTION="$PRESEED_DNS_SELECTION"
-        echo "Using preseeded DNS selection: $DNS_SELECTION"
-        echo "Starting DNS initialization in background..."
-        fqdnmgr setInitDNSRecords -r namecheap.com >>./log 2>&1 &
-      else
-        # Interactive mode - let the user see and interact with the prompts
-        fqdnmgr setInitDNSRecords -r namecheap.com
-      fi
+      # Interactive mode - let the user see and interact with the prompts
+      fqdnmgr setInitDNSRecords -r namecheap.com
     fi
   fi
 fi
