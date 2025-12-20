@@ -21,8 +21,10 @@ chown -R "$USER:$USER" "$HOME_DIR"
 
 loginctl enable-linger "$USER"
 
-grep -q "^$USER:" /etc/subuid || usermod --add-subuids 65536 "$USER"
-grep -q "^$USER:" /etc/subgid || usermod --add-subgids 65536 "$USER"
+SUBID_RANGE=$(fsubid)
+grep -q "^$USER:" /etc/subuid || usermod --add-subuids "$SUBID_RANGE" "$USER"
+grep -q "^$USER:" /etc/subgid || usermod --add-subgids "$SUBID_RANGE" "$USER"
+sudo -u "$USER" -H bash -c "podman system migrate"
 
 # Create the n8n_data volume as the n8n user
 sudo -u "$USER" -H bash -c "

@@ -14,7 +14,5 @@ services:
       - "5678:5678"
     volumes:
       - n8n_data:/home/node/.n8n
-      - /etc/letsencrypt:/etc/letsencrypt
-      - ./docker-data/dms/config/99-sni.conf:/etc/dovecot/conf.d/99-sni.conf
 volumes:
   n8n_data:
