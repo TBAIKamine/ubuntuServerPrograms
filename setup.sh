@@ -169,9 +169,7 @@ done
 
 trap 'echo -e "\n\nInterrupted by user. Exiting..."; exit 130' INT
 
-# ============================================================
-# GENERIC CLEANUP FUNCTION FOR PODMAN SYSTEM USERS
-# ============================================================
+
 # Usage: cleanup_podman_sys_user <username> <home_dir> <compose_dir> <service_name>
 cleanup_podman_sys_user() {
   local SYS_USER="$1"
