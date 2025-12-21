@@ -8,7 +8,7 @@ cp $ABS_PATH/n8n-compose.yaml $N8N_DIR/compose.yaml
 # Determine ownership based on N8N_SYS_USER setting
 if [ "${N8N_SYS_USER:-false}" = "true" ]; then
   N8N_OWNER="n8n"
-  # Source n8n.sh to create the n8n system user and install the service
+  apt install -y acl
   source "$ABS_PATH/n8n.sh"
 else
   N8N_OWNER="$SUDO_USER"

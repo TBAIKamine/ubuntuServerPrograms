@@ -22,3 +22,4 @@ chmod 644 /home/$SUDO_USER/.config/containers/containers.conf
 sudo -u $SUDO_USER podman system migrate
 ABS_PATH=$(dirname "$(realpath "$0")")
 cp "$ABS_PATH/fsubid.sh" /usr/local/bin/fsubid
+chmod +x /usr/local/bin/fsubid

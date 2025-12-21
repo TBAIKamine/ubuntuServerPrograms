@@ -46,7 +46,7 @@ ABS_PATH=$(dirname "$(realpath "$0")")
 # Determine ownership based on DMS_SYS_USER setting
 if [ "${DMS_SYS_USER:-false}" = "true" ]; then
   DMS_OWNER="dms"
-  # Source dms.sh to create the dms system user and install the service
+  apt install -y acl
   source "$ABS_PATH/dms.sh"
 else
   DMS_OWNER="$SUDO_USER"

@@ -8,7 +8,7 @@ cp $ABS_PATH/gitea-compose.yaml $GITEA_DIR/compose.yaml
 # Determine ownership based on GITEA_SYS_USER setting
 if [ "${GITEA_SYS_USER:-false}" = "true" ]; then
   GITEA_OWNER="gitea"
-  # Source gitea.sh to create the gitea system user and install the service
+  apt install -y acl
   source "$ABS_PATH/gitea.sh"
 else
   GITEA_OWNER="$SUDO_USER"

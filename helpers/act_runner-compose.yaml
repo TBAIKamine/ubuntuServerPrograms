@@ -1,0 +1,27 @@
+version: "3.8"
+
+services:
+  act_runner:
+    logging:
+      driver: journald
+    image: gitea/act_runner:latest-dind-rootless
+    container_name: act_runner
+    restart: unless-stopped
+    env_file:
+      - act_runner.env
+    volumes:
+      # Persistent data for runner configuration
+      - act_runner_data:/data
+      # Docker socket for rootless mode
+      - /run/user/1000/podman/podman.sock:/run/user/1000/podman/podman.sock:ro
+    privileged: false
+    # For rootless DinD, we need specific security options
+    security_opt:
+      - label=disable
+    tmpfs:
+      - /tmp
+      - /run
+
+volumes:
+  act_runner_data:
+    driver: local

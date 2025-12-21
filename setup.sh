@@ -168,6 +168,114 @@ for key in passwordless_sudoer fail2ban_vpn_bypass surfshark webserver apache_do
 done
 
 trap 'echo -e "\n\nInterrupted by user. Exiting..."; exit 130' INT
+
+# ============================================================
+# GENERIC CLEANUP FUNCTION FOR PODMAN SYSTEM USERS
+# ============================================================
+# Usage: cleanup_podman_sys_user <username> <home_dir> <compose_dir> <service_name>
+cleanup_podman_sys_user() {
+  local SYS_USER="$1"
+  local SYS_HOME="$2"
+  local SYS_COMPOSE_DIR="$3"
+  local SYS_SERVICE="$4"
+  
+  if ! id "$SYS_USER" &>/dev/null; then
+    echo "$SYS_USER user does not exist, nothing to clean up."
+    return 0
+  fi
+  
+  local SYS_UID=$(id -u "$SYS_USER" 2>/dev/null)
+  echo "Cleaning up $SYS_USER system user and all related configuration..."
+  
+  # 1. Stop and disable systemd user services
+  if [ -n "$SYS_UID" ] && [ -d "/run/user/$SYS_UID" ]; then
+    echo "  - Stopping $SYS_USER systemd user services..."
+    sudo -u "$SYS_USER" -H bash -c "
+      export XDG_RUNTIME_DIR=/run/user/$SYS_UID
+      systemctl --user stop $SYS_SERVICE 2>/dev/null || true
+      systemctl --user disable $SYS_SERVICE 2>/dev/null || true
+      systemctl --user stop podman.socket 2>/dev/null || true
+      systemctl --user disable podman.socket 2>/dev/null || true
+    " 2>/dev/null || true
+  fi
+  
+  # 2. Stop user slice and disable lingering
+  if [ -n "$SYS_UID" ]; then
+    echo "  - Stopping user slice..."
+    systemctl stop user@$SYS_UID.service 2>/dev/null || true
+    systemctl stop user-runtime-dir@$SYS_UID.service 2>/dev/null || true
+  fi
+  
+  echo "  - Disabling lingering for $SYS_USER..."
+  loginctl disable-linger "$SYS_USER" 2>/dev/null || true
+  
+  # 3. Remove subuid/subgid entries
+  echo "  - Removing subuid/subgid entries..."
+  [ -f /etc/subuid ] && sed -i "/^$SYS_USER:/d" /etc/subuid
+  [ -f /etc/subgid ] && sed -i "/^$SYS_USER:/d" /etc/subgid
+  
+  # 4. Remove compose directory
+  if [ -d "$SYS_COMPOSE_DIR" ]; then
+    echo "  - Removing compose directory $SYS_COMPOSE_DIR..."
+    rm -rf "$SYS_COMPOSE_DIR"
+  fi
+  
+  # 5. Delete user and home directory
+  echo "  - Deleting user $SYS_USER and home directory $SYS_HOME..."
+  userdel -r "$SYS_USER" 2>/dev/null || true
+  [ -d "$SYS_HOME" ] && rm -rf "$SYS_HOME"
+  
+  # 6. Clean up runtime directory
+  [ -n "$SYS_UID" ] && [ -d "/run/user/$SYS_UID" ] && rm -rf "/run/user/$SYS_UID"
+  
+  echo "$SYS_USER system user cleanup complete."
+}
+
+# Helper to prompt for sys user reinstall action (returns via global vars)
+# Usage: prompt_sys_user_action <service_name> <username>
+# Sets: ${SERVICE}_SYS_USER and ${SERVICE}_REINSTALL
+prompt_sys_user_action() {
+  local service_name="$1"
+  local username="$2"
+  local var_prefix=$(echo "$service_name" | tr '[:lower:]' '[:upper:]')
+  
+  if id "$username" &>/dev/null; then
+    echo "${service_name^} system user '$username' already exists from a previous installation."
+    echo "Options: y=Keep existing | r=Reinstall (delete & recreate) | n=Don't use sys user"
+    local action=$(prompt_with_getinput "Choose action [y/r/n]" "y" 15)
+    local status=$?
+    [ $status -eq 200 ] || [ -z "$action" ] && action="y"
+    
+    case "$action" in
+      [Yy]) eval "${var_prefix}_SYS_USER=true; ${var_prefix}_REINSTALL=false" ;;
+      [Rr]) eval "${var_prefix}_SYS_USER=true; ${var_prefix}_REINSTALL=true"
+            echo "Will perform complete cleanup and fresh install of $username system user." ;;
+      *)    eval "${var_prefix}_SYS_USER=false; ${var_prefix}_REINSTALL=false" ;;
+    esac
+  else
+    eval "${var_prefix}_REINSTALL=false"
+    if [ "$SETUP_PRESEED" = true ]; then
+      local preseed_var="PRESEED_${var_prefix}_SYS_USER"
+      if [ -n "${!preseed_var:-}" ]; then
+        if [ "${!preseed_var}" = "1" ]; then
+          eval "${var_prefix}_SYS_USER=true"
+          echo "Using preseeded ${service_name} system user setting: enabled"
+        else
+          eval "${var_prefix}_SYS_USER=false"
+          echo "Using preseeded ${service_name} system user setting: disabled"
+        fi
+        return
+      fi
+    fi
+    echo "It is encouraged to create a dedicated system user '$username' to run the ${service_name} container."
+    echo "This provides better security and isolation."
+    local create=$(prompt_with_getinput "Create system user '$username'? [y/n]" "y" 10)
+    local status=$?
+    [ $status -eq 200 ] || [ -z "$create" ] && create="y"
+    [[ "$create" =~ ^[Yy]$ ]] && eval "${var_prefix}_SYS_USER=true" || eval "${var_prefix}_SYS_USER=false"
+  fi
+}
+
 is_valid_email() {
     local e="$1"
     # empty check
@@ -747,124 +855,14 @@ if [ "${OPTIONS[docker_mailserver]}" = "1" ]; then
       fi
     done
   fi
-  # Check if dms user already exists (indicates prior setup)
-  if id "dms" &>/dev/null; then
-    # dms user exists => ask if wants to keep using it (preseed does NOT apply to reinstalls)
-    USE_DMS_USER=$(prompt_with_getinput "DMS system user 'dms' already exists. Continue using it? [y/n]" "y" 10)
-    status=$?
-    if [ $status -eq 200 ] || [ -z "$USE_DMS_USER" ]; then
-      USE_DMS_USER="y"
-    fi
-    if [[ "$USE_DMS_USER" =~ ^[Yy]$ ]]; then
-      DMS_SYS_USER=true
-    else
-      DMS_SYS_USER=false
-    fi
-  else
-    # not set up => check preseed first, then prompt
-    if [ "$SETUP_PRESEED" = true ] && [ -n "${PRESEED_DMS_SYS_USER:-}" ]; then
-      if [ "${PRESEED_DMS_SYS_USER}" = "1" ]; then
-        DMS_SYS_USER=true
-        echo "Using preseeded DMS system user setting: enabled"
-      else
-        DMS_SYS_USER=false
-        echo "Using preseeded DMS system user setting: disabled"
-      fi
-    else
-      echo "It is encouraged to create a dedicated system user 'dms' to run the DMS container."
-      echo "This provides better security and isolation for the mail server."
-      CREATE_DMS_USER=$(prompt_with_getinput "Create system user 'dms' for Docker Mailserver? [y/n]" "y" 10)
-      status=$?
-      if [ $status -eq 200 ] || [ -z "$CREATE_DMS_USER" ]; then
-        CREATE_DMS_USER="y"
-      fi
-      if [[ "$CREATE_DMS_USER" =~ ^[Yy]$ ]]; then
-        DMS_SYS_USER=true
-      else
-        DMS_SYS_USER=false
-      fi
-    fi
-  fi
+  # Prompt for DMS system user with reinstall option
+  prompt_sys_user_action "DMS" "dms"
 fi
 if [ "${OPTIONS[gitea]}" = "1" ]; then
-  # Check if gitea user already exists (indicates prior setup)
-  if id "gitea" &>/dev/null; then
-    # gitea user exists => ask if wants to keep using it (preseed does NOT apply to reinstalls)
-    USE_GITEA_USER=$(prompt_with_getinput "Gitea system user 'gitea' already exists. Continue using it? [y/n]" "y" 10)
-    status=$?
-    if [ $status -eq 200 ] || [ -z "$USE_GITEA_USER" ]; then
-      USE_GITEA_USER="y"
-    fi
-    if [[ "$USE_GITEA_USER" =~ ^[Yy]$ ]]; then
-      GITEA_SYS_USER=true
-    else
-      GITEA_SYS_USER=false
-    fi
-  else
-    # not set up => check preseed first, then prompt
-    if [ "$SETUP_PRESEED" = true ] && [ -n "${PRESEED_GITEA_SYS_USER:-}" ]; then
-      if [ "${PRESEED_GITEA_SYS_USER}" = "1" ]; then
-        GITEA_SYS_USER=true
-        echo "Using preseeded Gitea system user setting: enabled"
-      else
-        GITEA_SYS_USER=false
-        echo "Using preseeded Gitea system user setting: disabled"
-      fi
-    else
-      echo "It is encouraged to create a dedicated system user 'gitea' to run the Gitea container."
-      echo "This provides better security and isolation for the git server."
-      CREATE_GITEA_USER=$(prompt_with_getinput "Create system user 'gitea' for Gitea? [y/n]" "y" 10)
-      status=$?
-      if [ $status -eq 200 ] || [ -z "$CREATE_GITEA_USER" ]; then
-        CREATE_GITEA_USER="y"
-      fi
-      if [[ "$CREATE_GITEA_USER" =~ ^[Yy]$ ]]; then
-        GITEA_SYS_USER=true
-      else
-        GITEA_SYS_USER=false
-      fi
-    fi
-  fi
+  prompt_sys_user_action "Gitea" "gitea"
 fi
 if [ "${OPTIONS[n8n]}" = "1" ]; then
-  # Check if n8n user already exists (indicates prior setup)
-  if id "n8n" &>/dev/null; then
-    # n8n user exists => ask if wants to keep using it (preseed does NOT apply to reinstalls)
-    USE_N8N_USER=$(prompt_with_getinput "n8n system user 'n8n' already exists. Continue using it? [y/n]" "y" 10)
-    status=$?
-    if [ $status -eq 200 ] || [ -z "$USE_N8N_USER" ]; then
-      USE_N8N_USER="y"
-    fi
-    if [[ "$USE_N8N_USER" =~ ^[Yy]$ ]]; then
-      N8N_SYS_USER=true
-    else
-      N8N_SYS_USER=false
-    fi
-  else
-    # not set up => check preseed first, then prompt
-    if [ "$SETUP_PRESEED" = true ] && [ -n "${PRESEED_N8N_SYS_USER:-}" ]; then
-      if [ "${PRESEED_N8N_SYS_USER}" = "1" ]; then
-        N8N_SYS_USER=true
-        echo "Using preseeded n8n system user setting: enabled"
-      else
-        N8N_SYS_USER=false
-        echo "Using preseeded n8n system user setting: disabled"
-      fi
-    else
-      echo "It is encouraged to create a dedicated system user 'n8n' to run the n8n container."
-      echo "This provides better security and isolation for the automation platform."
-      CREATE_N8N_USER=$(prompt_with_getinput "Create system user 'n8n' for n8n? [y/n]" "y" 10)
-      status=$?
-      if [ $status -eq 200 ] || [ -z "$CREATE_N8N_USER" ]; then
-        CREATE_N8N_USER="y"
-      fi
-      if [[ "$CREATE_N8N_USER" =~ ^[Yy]$ ]]; then
-        N8N_SYS_USER=true
-      else
-        N8N_SYS_USER=false
-      fi
-    fi
-  fi
+  prompt_sys_user_action "n8n" "n8n"
 fi
 
 print_status "Updating package lists and upgrading existing packages, this will take a moment... "
@@ -1162,7 +1160,14 @@ if [ "${OPTIONS[portainer]}" = "1" ]; then
   fi
 fi
 if [ "${OPTIONS[docker_mailserver]}" = "1" ]; then
-  if [ -f "/opt/compose/docker-mailserver/compose.yaml" ]; then
+  # Handle reinstall: clean up first, then install fresh
+  if [ "${DMS_REINSTALL:-false}" = true ]; then
+    print_status "Performing complete DMS cleanup for reinstall... "
+    cleanup_podman_sys_user "dms" "/var/lib/dms" "/opt/compose/docker-mailserver" "dms.service" >>./log 2>&1
+    echo "Done"
+  fi
+  
+  if [ -f "/opt/compose/docker-mailserver/compose.yaml" ] && [ "${DMS_REINSTALL:-false}" = false ]; then
     print_status "Docker Mailserver already set up. Skipping... "
     echo
   else
@@ -1191,7 +1196,14 @@ if [ "${OPTIONS[docker_mailserver]}" = "1" ] && [ "${OPTIONS[webserver]}" = "1" 
   fi
 fi
 if [ "${OPTIONS[gitea]}" = "1" ]; then
-  if [ -f "/opt/compose/gitea/compose.yaml" ]; then
+  # Handle reinstall: clean up first, then install fresh
+  if [ "${GITEA_REINSTALL:-false}" = true ]; then
+    print_status "Performing complete Gitea cleanup for reinstall... "
+    cleanup_podman_sys_user "gitea" "/var/lib/gitea" "/opt/compose/gitea" "gitea.service" >>./log 2>&1
+    echo "Done"
+  fi
+  
+  if [ -f "/opt/compose/gitea/compose.yaml" ] && [ "${GITEA_REINSTALL:-false}" = false ]; then
     print_status "Gitea already set up. Skipping... "
     echo
   else
@@ -1206,7 +1218,14 @@ if [ "${OPTIONS[gitea_runner]}" = "1" ]; then
     # TODO: Implement Gitea runner installation logic
 fi
 if [ "${OPTIONS[n8n]}" = "1" ]; then
-  if podman volume inspect n8n_data &>/dev/null && [ -f "/opt/compose/n8n/compose.yaml" ]; then
+  # Handle reinstall: clean up first, then install fresh
+  if [ "${N8N_REINSTALL:-false}" = true ]; then
+    print_status "Performing complete n8n cleanup for reinstall... "
+    cleanup_podman_sys_user "n8n" "/var/lib/n8n" "/opt/compose/n8n" "n8n.service" >>./log 2>&1
+    echo "Done"
+  fi
+  
+  if [ -f "/opt/compose/n8n/compose.yaml" ] && [ "${N8N_REINSTALL:-false}" = false ]; then
     print_status "n8n already set up. Skipping... "
     echo
   else
