@@ -53,7 +53,6 @@ else
 fi
 
 chown -R "$DMS_OWNER:$DMS_OWNER" $DMS_DIR
-chown -R "$DMS_OWNER:$DMS_OWNER" $DMS_DIR/docker-data
 
 # custom config overrides
 cp $ABS_PATH/postfix-main.cf $DMS_DIR/docker-data/dms/config/postfix-main.cf

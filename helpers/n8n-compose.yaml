@@ -6,6 +6,7 @@ services:
     image: docker.n8n.io/n8nio/n8n
     container_name: n8n
     restart: always
+    userns_mode: "keep-id:uid=1000,gid=1000"
     environment:
       - GENERIC_TIMEZONE=$(timedatectl show --value --property=Timezone)
       - TZ=$(timedatectl show --value --property=Timezone)

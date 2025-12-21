@@ -33,6 +33,10 @@ sudo -u "$USER" -H bash -c "podman system migrate"
 
 chown -R "$USER:$USER" "$COMPOSE_DIR"
 
+# Add journald logging driver to compose file
+sed -i '/^services:/,/^[^ ]/ { /^  [a-z]/a\    logging:\n      driver: journald
+}' "$COMPOSE_DIR/docker-compose.yaml"
+
 TARGET_UNIT="$HOME_DIR/.config/systemd/user/$SERVICE_NAME"
 ESC_COMPOSE_DIR=$(printf '%s' "$COMPOSE_DIR" | sed 's/[&/]/\\&/g')
 sed "s|\\\$COMPOSE_DIR|$ESC_COMPOSE_DIR|g" "$ABS_PATH/$SERVICE_NAME" > "$TARGET_UNIT"
@@ -40,6 +44,11 @@ sed "s|\\\$COMPOSE_DIR|$ESC_COMPOSE_DIR|g" "$ABS_PATH/$SERVICE_NAME" > "$TARGET_
 chown "$USER:$USER" "$TARGET_UNIT"
 
 systemctl start user@$UID_NUM.service
+
+# Wait for user runtime directory to be ready
+while [ ! -d "/run/user/$UID_NUM" ]; do
+    sleep 1
+done
 
 sudo -u "$USER" -H bash -c "
 cd '$HOME_DIR' || exit 1

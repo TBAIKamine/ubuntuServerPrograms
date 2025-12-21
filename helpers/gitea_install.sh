@@ -2,7 +2,7 @@
 ABS_PATH=$(dirname "$(realpath "$0")")
 GITEA_DIR="/opt/compose/gitea"
 
-mkdir -p $GITEA_DIR/gitea
+mkdir -p $GITEA_DIR/{data,config}
 cp $ABS_PATH/gitea-compose.yaml $GITEA_DIR/compose.yaml
 
 # Determine ownership based on GITEA_SYS_USER setting

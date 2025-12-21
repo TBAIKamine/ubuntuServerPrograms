@@ -36,6 +36,11 @@ chown "$USER:$USER" "$TARGET_UNIT"
 
 systemctl start user@$UID_NUM.service
 
+# Wait for user runtime directory to be ready
+while [ ! -d "/run/user/$UID_NUM" ]; do
+    sleep 1
+done
+
 sudo -u "$USER" -H bash -c "
 cd '$HOME_DIR' || exit 1
 XDG_RUNTIME_DIR='/run/user/$UID_NUM' systemctl --user daemon-reload
@@ -46,6 +51,7 @@ cd '$HOME_DIR' || exit 1
 XDG_RUNTIME_DIR='/run/user/$UID_NUM' systemctl --user enable --now '$SERVICE_NAME'
 "
 
+#below should only be done if cockpit is installed (TODO later)
 sudo -u "$USER" -H bash -c "
 export XDG_RUNTIME_DIR=/run/user/$UID_NUM
 systemctl --user enable --now podman.socket
