@@ -4,12 +4,10 @@ mkdir -p $DMS_DIR
 DMS_GITHUB_URL="https://raw.githubusercontent.com/docker-mailserver/docker-mailserver/master"
 wget "${DMS_GITHUB_URL}/compose.yaml" -O $DMS_DIR/compose.yaml
 wget "${DMS_GITHUB_URL}/mailserver.env" -O $DMS_DIR/mailserver.env
-# Initial ownership set temporarily; will be updated after DMS_OWNER is determined
 unset DMS_GITHUB_URL
 
-# compose.yaml edits with sed.
 if [[ -n "${FQDN:-}" ]]; then
-      sed -i -E "s/^([[:space:]]*hostname:[[:space:]]*)mail\.example\.com([[:space:]]*)$/\1mail.${FQDN}\2/" "$DMS_DIR/compose.yaml"
+  sed -i -E "s/^([[:space:]]*hostname:[[:space:]]*)mail\.example\.com([[:space:]]*)$/\1mail.${FQDN}\2/" "$DMS_DIR/compose.yaml"
 fi
 sed -i '/env_file: mailserver.env/a\
     environment:\
@@ -43,18 +41,23 @@ mkdir -p $DMS_DIR/docker-data/dms/{mail-data,mail-state,mail-logs,config}
 
 ABS_PATH=$(dirname "$(realpath "$0")")
 
-# Determine ownership based on DMS_SYS_USER setting
+dms_acl_hook() {
+  setfacl -R -m u:dms:rx /etc/letsencrypt/live
+  setfacl -R -m u:dms:rx /etc/letsencrypt/archive
+  setfacl -R -d -m u:dms:rx /etc/letsencrypt/live
+  setfacl -R -d -m u:dms:rx /etc/letsencrypt/archive
+}
+
 if [ "${DMS_SYS_USER:-false}" = "true" ]; then
   DMS_OWNER="dms"
   apt install -y acl
-  source "$ABS_PATH/dms.sh"
+  podmgr setup --user dms --compose-dir "$DMS_DIR" --pre-hook dms_acl_hook
 else
   DMS_OWNER="$SUDO_USER"
 fi
 
 chown -R "$DMS_OWNER:$DMS_OWNER" $DMS_DIR
 
-# custom config overrides
 cp $ABS_PATH/postfix-main.cf $DMS_DIR/docker-data/dms/config/postfix-main.cf
 cp $ABS_PATH/user-patches.sh $DMS_DIR/docker-data/dms/config/user-patches.sh
 

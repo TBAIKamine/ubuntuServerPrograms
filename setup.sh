@@ -170,68 +170,6 @@ done
 trap 'echo -e "\n\nInterrupted by user. Exiting..."; exit 130' INT
 
 
-# Usage: cleanup_podman_sys_user <username> <home_dir> <compose_dir> <service_name>
-cleanup_podman_sys_user() {
-  local SYS_USER="$1"
-  local SYS_HOME="$2"
-  local SYS_COMPOSE_DIR="$3"
-  local SYS_SERVICE="$4"
-  
-  if ! id "$SYS_USER" &>/dev/null; then
-    echo "$SYS_USER user does not exist, nothing to clean up."
-    return 0
-  fi
-  
-  local SYS_UID=$(id -u "$SYS_USER" 2>/dev/null)
-  echo "Cleaning up $SYS_USER system user and all related configuration..."
-  
-  # 1. Stop and disable systemd user services
-  if [ -n "$SYS_UID" ] && [ -d "/run/user/$SYS_UID" ]; then
-    echo "  - Stopping $SYS_USER systemd user services..."
-    sudo -u "$SYS_USER" -H bash -c "
-      export XDG_RUNTIME_DIR=/run/user/$SYS_UID
-      systemctl --user stop $SYS_SERVICE 2>/dev/null || true
-      systemctl --user disable $SYS_SERVICE 2>/dev/null || true
-      systemctl --user stop podman.socket 2>/dev/null || true
-      systemctl --user disable podman.socket 2>/dev/null || true
-    " 2>/dev/null || true
-  fi
-  
-  # 2. Stop user slice and disable lingering
-  if [ -n "$SYS_UID" ]; then
-    echo "  - Stopping user slice..."
-    systemctl stop user@$SYS_UID.service 2>/dev/null || true
-    systemctl stop user-runtime-dir@$SYS_UID.service 2>/dev/null || true
-  fi
-  
-  echo "  - Disabling lingering for $SYS_USER..."
-  loginctl disable-linger "$SYS_USER" 2>/dev/null || true
-  
-  # 3. Remove subuid/subgid entries
-  echo "  - Removing subuid/subgid entries..."
-  [ -f /etc/subuid ] && sed -i "/^$SYS_USER:/d" /etc/subuid
-  [ -f /etc/subgid ] && sed -i "/^$SYS_USER:/d" /etc/subgid
-  
-  # 4. Remove compose directory
-  if [ -d "$SYS_COMPOSE_DIR" ]; then
-    echo "  - Removing compose directory $SYS_COMPOSE_DIR..."
-    rm -rf "$SYS_COMPOSE_DIR"
-  fi
-  
-  # 5. Delete user and home directory
-  echo "  - Deleting user $SYS_USER and home directory $SYS_HOME..."
-  userdel -r "$SYS_USER" 2>/dev/null || true
-  [ -d "$SYS_HOME" ] && rm -rf "$SYS_HOME"
-  
-  # 6. Clean up runtime directory
-  [ -n "$SYS_UID" ] && [ -d "/run/user/$SYS_UID" ] && rm -rf "/run/user/$SYS_UID"
-  
-  echo "$SYS_USER system user cleanup complete."
-}
-
-# Helper to prompt for sys user reinstall action (returns via global vars)
-# Usage: prompt_sys_user_action <service_name> <username>
-# Sets: ${SERVICE}_SYS_USER and ${SERVICE}_REINSTALL
 prompt_sys_user_action() {
   local service_name="$1"
   local username="$2"
@@ -940,7 +878,6 @@ if [ "${OPTIONS[webserver]}" = "1" ]; then
   fi
 fi
 if [ "${OPTIONS[apache_domains]}" = "1" ]; then
-  # If all helper commands exist, skip installation
   if command -v a2sitemgr >/dev/null 2>&1 && \
      command -v fqdncredmgr >/dev/null 2>&1 && \
      command -v fqdnmgr >/dev/null 2>&1 && \
@@ -960,6 +897,29 @@ if [ "${OPTIONS[apache_domains]}" = "1" ]; then
     bash ./helpers/progress.sh $!
     echo
   fi
+fi
+if ! command -v fsubid >/dev/null 2>&1; then
+  print_status "Installing fsubid... "
+  {
+    mkdir -p /usr/local/bin/fsubid.d
+    cp "$ABS_PATH/helpers/fsubid.d/fsubid.sh" /usr/local/bin/fsubid.d/
+    cp "$ABS_PATH/helpers/fsubid.d/usage.txt" /usr/local/bin/fsubid.d/
+    chmod +x /usr/local/bin/fsubid.d/fsubid.sh
+    ln -sf /usr/local/bin/fsubid.d/fsubid.sh /usr/local/bin/fsubid
+  } >>./log 2>&1
+  echo "Done"
+fi
+if ! command -v podmgr >/dev/null 2>&1; then
+  print_status "Installing podmgr... "
+  {
+    mkdir -p /usr/local/bin/podmgr.d
+    cp "$ABS_PATH/helpers/podmgr.d/podmgr.sh" /usr/local/bin/podmgr.d/
+    cp "$ABS_PATH/helpers/podmgr.d/usage.txt" /usr/local/bin/podmgr.d/
+    cp "$ABS_PATH/helpers/podmgr.d/podman-compose.service.tpl" /usr/local/bin/podmgr.d/
+    chmod +x /usr/local/bin/podmgr.d/podmgr.sh
+    ln -sf /usr/local/bin/podmgr.d/podmgr.sh /usr/local/bin/podmgr
+  } >>./log 2>&1
+  echo "Done"
 fi
 if [ "${OPTIONS[certbot]}" = "1" ]; then
   if dpkg -s certbot &>/dev/null; then
@@ -1158,10 +1118,9 @@ if [ "${OPTIONS[portainer]}" = "1" ]; then
   fi
 fi
 if [ "${OPTIONS[docker_mailserver]}" = "1" ]; then
-  # Handle reinstall: clean up first, then install fresh
   if [ "${DMS_REINSTALL:-false}" = true ]; then
     print_status "Performing complete DMS cleanup for reinstall... "
-    cleanup_podman_sys_user "dms" "/var/lib/dms" "/opt/compose/docker-mailserver" "dms.service" >>./log 2>&1
+    podmgr cleanup --user dms --compose-dir /opt/compose/docker-mailserver >>./log 2>&1
     echo "Done"
   fi
   
@@ -1194,10 +1153,9 @@ if [ "${OPTIONS[docker_mailserver]}" = "1" ] && [ "${OPTIONS[webserver]}" = "1" 
   fi
 fi
 if [ "${OPTIONS[gitea]}" = "1" ]; then
-  # Handle reinstall: clean up first, then install fresh
   if [ "${GITEA_REINSTALL:-false}" = true ]; then
     print_status "Performing complete Gitea cleanup for reinstall... "
-    cleanup_podman_sys_user "gitea" "/var/lib/gitea" "/opt/compose/gitea" "gitea.service" >>./log 2>&1
+    podmgr cleanup --user gitea >>./log 2>&1
     echo "Done"
   fi
   
@@ -1216,10 +1174,9 @@ if [ "${OPTIONS[gitea_runner]}" = "1" ]; then
     # TODO: Implement Gitea runner installation logic
 fi
 if [ "${OPTIONS[n8n]}" = "1" ]; then
-  # Handle reinstall: clean up first, then install fresh
   if [ "${N8N_REINSTALL:-false}" = true ]; then
     print_status "Performing complete n8n cleanup for reinstall... "
-    cleanup_podman_sys_user "n8n" "/var/lib/n8n" "/opt/compose/n8n" "n8n.service" >>./log 2>&1
+    podmgr cleanup --user n8n >>./log 2>&1
     echo "Done"
   fi
   

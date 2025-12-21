@@ -1,11 +1,9 @@
 [Unit]
-Description=Docker Mailserver (podman-compose)
+Description=$USER (podman-compose)
 
 [Service]
 Type=simple
 WorkingDirectory=$COMPOSE_DIR
-Restart=always
-RestartSec=5
 ExecStart=/usr/bin/podman-compose -f compose.yaml up
 ExecStop=/usr/bin/podman-compose -f compose.yaml down
 

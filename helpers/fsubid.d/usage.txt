@@ -1,0 +1,12 @@
+fsubid - Generate next available subuid/subgid range
+
+USAGE:
+  fsubid
+
+OUTPUT:
+  Prints a range like "100000-104999" suitable for usermod --add-subuids
+
+EXAMPLE:
+  RANGE=$(fsubid)
+  usermod --add-subuids "$RANGE" myuser
+  usermod --add-subgids "$RANGE" myuser
