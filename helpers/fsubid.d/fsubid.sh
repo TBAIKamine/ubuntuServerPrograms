@@ -7,7 +7,7 @@ if [[ "$1" == "-h" || "$1" == "--help" ]]; then
   exit 0
 fi
 
-RANGE_SIZE=5000
+RANGE_SIZE=70000
 START=100000
 
 if [ -s /etc/subuid ]; then

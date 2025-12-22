@@ -18,18 +18,17 @@ run_hook() {
   fi
 }
 
-get_user_runtime() {
+get_user_env() {
   local user="$1"
-  local uid_num=$(id -u "$user" 2>/dev/null)
-  echo "/run/user/$uid_num"
+  echo "/var/lib/$user/.config/environment.d/podman.conf"
 }
 
 run_as_user() {
   local user="$1"
   shift
-  local uid_num=$(id -u "$user" 2>/dev/null)
+  local env_file=$(get_user_env "$user")
   local compose_dir="${COMPOSE_DIR:-/opt/compose/$user}"
-  sudo -u "$user" -H bash -c "cd '$compose_dir' && XDG_RUNTIME_DIR='/run/user/$uid_num' $*"
+  sudo -u "$user" -H bash -c "source '$env_file' && cd '$compose_dir' && $*"
 }
 
 do_setup() {
@@ -43,7 +42,10 @@ do_setup() {
   mkdir -p "$home_dir/.config/systemd/user" "$home_dir/.config/environment.d" "$home_dir/.local/share"
 
   local env_file="$home_dir/.config/environment.d/podman.conf"
-  echo 'DOCKER_HOST=unix:///run/user/%U/podman/podman.sock' > "$env_file"
+  cat > "$env_file" <<EOF
+export XDG_RUNTIME_DIR="/run/user/$uid_num"
+export DOCKER_HOST="unix:///run/user/$uid_num/podman/podman.sock"
+EOF
   chown -R "$user:$user" "$home_dir"
 
   loginctl enable-linger "$user" 2>/dev/null || true
@@ -71,9 +73,9 @@ do_setup() {
     ((wait_count++))
   done
 
-  sudo -u "$user" -H bash -c "XDG_RUNTIME_DIR='/run/user/$uid_num' systemctl --user daemon-reload" 2>/dev/null || true
-  sudo -u "$user" -H bash -c "XDG_RUNTIME_DIR='/run/user/$uid_num' systemctl --user enable --now '$service_name'" 2>/dev/null || true
-  sudo -u "$user" -H bash -c "XDG_RUNTIME_DIR='/run/user/$uid_num' systemctl --user enable --now podman.socket" 2>/dev/null || true
+  sudo -u "$user" -H bash -c "source '$env_file' && systemctl --user daemon-reload" 2>/dev/null || true
+  sudo -u "$user" -H bash -c "source '$env_file' && systemctl --user enable --now '$service_name'" 2>/dev/null || true
+  sudo -u "$user" -H bash -c "source '$env_file' && systemctl --user enable --now podman.socket" 2>/dev/null || true
 
   echo "Created user $user"
 }
@@ -90,10 +92,12 @@ do_cleanup() {
 
   local uid_num=$(id -u "$user" 2>/dev/null)
 
+  local env_file=$(get_user_env "$user")
   if [ -n "$uid_num" ] && [ -d "/run/user/$uid_num" ]; then
     sudo -u "$user" -H bash -c "
-      XDG_RUNTIME_DIR='/run/user/$uid_num' systemctl --user disable --now '$service_name'
-      XDG_RUNTIME_DIR='/run/user/$uid_num' systemctl --user disable --now podman.socket
+      source '$env_file'
+      systemctl --user disable --now '$service_name'
+      systemctl --user disable --now podman.socket
     " 2>/dev/null || true
   fi
 
@@ -135,9 +139,9 @@ do_down() {
 
 do_kill() {
   local user="$1"
-  local uid_num=$(id -u "$user" 2>/dev/null)
+  local env_file=$(get_user_env "$user")
   local service_name="$user.service"
-  sudo -u "$user" -H bash -c "XDG_RUNTIME_DIR='/run/user/$uid_num' systemctl --user stop '$service_name'" 2>/dev/null || true
+  sudo -u "$user" -H bash -c "source '$env_file' && systemctl --user stop '$service_name'" 2>/dev/null || true
   echo "Stopped $user"
 }
 
@@ -152,6 +156,42 @@ do_journal() {
   journalctl "_UID=$uid_num" -f
 }
 
+do_exec() {
+  local user="$1"
+  local compose_dir="${COMPOSE_DIR:-/opt/compose/$user}"
+  
+  # Get container name from compose file
+  local compose_file="$compose_dir/docker-compose.yml"
+  [ ! -f "$compose_file" ] && compose_file="$compose_dir/docker-compose.yaml"
+  [ ! -f "$compose_file" ] && compose_file="$compose_dir/compose.yml"
+  [ ! -f "$compose_file" ] && compose_file="$compose_dir/compose.yaml"
+  
+  if [ ! -f "$compose_file" ]; then
+    echo "Error: No compose file found in $compose_dir"
+    exit 1
+  fi
+  
+  local container_name=$(grep -m1 'container_name:' "$compose_file" | sed 's/.*container_name:\s*//' | tr -d '"' | tr -d "'" | xargs)
+  
+  if [ -z "$container_name" ]; then
+    echo "Error: No container_name found in $compose_file"
+    exit 1
+  fi
+  
+  local env_file=$(get_user_env "$user")
+  sudo -u "$user" -H bash -c "
+    source '$env_file'
+    cd '$compose_dir'
+    podman exec -it '$container_name' bash
+  "
+}
+
+do_lazydocker() {
+  local user="$1"
+  local env_file=$(get_user_env "$user")
+  sudo -u "$user" -H bash -c "source '$env_file' && cd && lazydocker"
+}
+
 USER=""
 COMPOSE_DIR=""
 PRE_HOOK=""
@@ -160,7 +200,7 @@ CMD=""
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
-    setup|cleanup|reinstall|up|down|kill|ps|journal) CMD="$1"; shift ;;
+    setup|cleanup|reinstall|up|down|kill|ps|journal|exec|lazydocker) CMD="$1"; shift ;;
     --user|-u) USER="$2"; shift 2 ;;
     --compose-dir|-c) COMPOSE_DIR="$2"; shift 2 ;;
     --pre-hook) PRE_HOOK="$2"; shift 2 ;;
@@ -189,4 +229,6 @@ case "$CMD" in
   kill) do_kill "$USER" ;;
   ps) do_ps "$USER" ;;
   journal) do_journal "$USER" ;;
+  exec) do_exec "$USER" ;;
+  lazydocker) do_lazydocker "$USER" ;;
 esac

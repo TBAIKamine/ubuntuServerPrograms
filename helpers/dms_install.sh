@@ -47,6 +47,7 @@ dms_acl_hook() {
   setfacl -R -d -m u:dms:rx /etc/letsencrypt/live
   setfacl -R -d -m u:dms:rx /etc/letsencrypt/archive
 }
+export -f dms_acl_hook
 
 if [ "${DMS_SYS_USER:-false}" = "true" ]; then
   DMS_OWNER="dms"
