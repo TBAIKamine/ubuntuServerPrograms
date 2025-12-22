@@ -1302,7 +1302,7 @@ dms_acl_hook() {
   setfacl -R -d -m u:dms:rx /etc/letsencrypt/archive
 }
 if [ "${OPTIONS[docker_mailserver]}" = "1" ]; then
-  if [ -f "/etc/letsencrypt/live" ] then
+  if [ -d "/etc/letsencrypt/live" ]; then
     dms_acl_hook
     a2wcrecalc-dms
   fi
