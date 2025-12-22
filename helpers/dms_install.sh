@@ -46,10 +46,14 @@ mkdir -p $DMS_DIR/docker-data/dms/{mail-data,mail-state,mail-logs,config}
 ABS_PATH=$(dirname "$(realpath "$0")")
 
 dms_acl_hook() {
-  setfacl -R -m u:dms:rx /etc/letsencrypt/live
-  setfacl -R -m u:dms:rx /etc/letsencrypt/archive
-  setfacl -R -d -m u:dms:rx /etc/letsencrypt/live
-  setfacl -R -d -m u:dms:rx /etc/letsencrypt/archive
+  if [ -d /etc/letsencrypt/live ]; then
+    setfacl -R -m u:dms:rx /etc/letsencrypt/live
+    setfacl -R -d -m u:dms:rx /etc/letsencrypt/live
+  fi
+  if [ -d /etc/letsencrypt/archive ]; then
+    setfacl -R -m u:dms:rx /etc/letsencrypt/archive
+    setfacl -R -d -m u:dms:rx /etc/letsencrypt/archive
+  fi
 }
 export -f dms_acl_hook
 

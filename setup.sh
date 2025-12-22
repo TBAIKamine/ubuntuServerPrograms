@@ -1294,5 +1294,18 @@ if [ "${OPTIONS[grafana_otel]}" = "1" ]; then
     echo "Installing Grafana with OpenTelemetry LGTM stack..."
     # TODO: Implement Grafana + OTEL installation logic
 fi
+# cleanup
+dms_acl_hook() {
+  setfacl -R -m u:dms:rx /etc/letsencrypt/live
+  setfacl -R -m u:dms:rx /etc/letsencrypt/archive
+  setfacl -R -d -m u:dms:rx /etc/letsencrypt/live
+  setfacl -R -d -m u:dms:rx /etc/letsencrypt/archive
+}
+if [ "${OPTIONS[docker_mailserver]}" = "1" ]; then
+  if [ -f "/etc/letsencrypt/live" ] then
+    dms_acl_hook
+    a2wcrecalc-dms
+  fi
+fi
 # TODO: must have containers: supabase, appwrite
 echo -e "\nSetup complete!"
