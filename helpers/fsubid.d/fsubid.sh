@@ -7,6 +7,12 @@ if [[ "$1" == "-h" || "$1" == "--help" ]]; then
   exit 0
 fi
 
+# Safety check: prevent changes when SUDO_USER is root
+if [[ "$SUDO_USER" == "root" ]]; then
+  echo "Error: SUDO_USER is root. Refusing to make changes."
+  exit 1
+fi
+
 RANGE_SIZE=70000
 SUDO_USER_START=100000
 SUDO_USER_END=$((SUDO_USER_START + RANGE_SIZE - 1))
