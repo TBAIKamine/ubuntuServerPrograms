@@ -12,9 +12,20 @@ run_hook() {
   local hook="$1"
   [ -z "$hook" ] && return 0
   if [ -f "$hook" ]; then
-    source "$hook"
+    echo "Running hook from file: $hook"
+    if ! source "$hook"; then
+      echo "ERROR: Hook file '$hook' failed with exit code $?" >&2
+      return 1
+    fi
   elif declare -f "$hook" >/dev/null 2>&1; then
-    "$hook"
+    echo "Running hook function: $hook"
+    if ! "$hook"; then
+      echo "ERROR: Hook function '$hook' failed with exit code $?" >&2
+      return 1
+    fi
+  else
+    echo "ERROR: Hook '$hook' is neither a file nor a declared function" >&2
+    return 1
   fi
 }
 
