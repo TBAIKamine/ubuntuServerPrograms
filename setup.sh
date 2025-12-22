@@ -800,6 +800,89 @@ fi
 if [ "${OPTIONS[n8n]}" = "1" ]; then
   prompt_sys_user_action "n8n" "n8n"
 fi
+if [ "${OPTIONS[surfshark]}" = "1" ]; then
+  if dpkg -s surfshark &>/dev/null; then
+    REINSTALL_SURFSHARK=$(prompt_with_getinput "Surfshark already installed. Re-install? [y/n]" "n" 10)
+    status=$?
+    if [ $status -eq 200 ] || [ -z "$REINSTALL_SURFSHARK" ]; then
+      REINSTALL_SURFSHARK="n"
+    fi
+  fi
+fi
+if [ "${OPTIONS[apache_domains]}" = "1" ]; then
+  if command -v a2sitemgr >/dev/null 2>&1 && \
+     command -v fqdncredmgr >/dev/null 2>&1 && \
+     command -v fqdnmgr >/dev/null 2>&1 && \
+     command -v a2wcrecalc >/dev/null 2>&1; then
+    REINSTALL_APACHE_DOMAINS=$(prompt_with_getinput "Apache domain management tools already installed. Re-install? [y/n]" "n" 10)
+    status=$?
+    if [ $status -eq 200 ] || [ -z "$REINSTALL_APACHE_DOMAINS" ]; then
+      REINSTALL_APACHE_DOMAINS="n"
+    fi
+  fi
+fi
+if [ "${OPTIONS[roundcube]}" = "1" ]; then
+  if [ -d "/var/www/mail" ]; then
+    REINSTALL_ROUNDCUBE=$(prompt_with_getinput "Roundcube webmail already installed. Re-install? [y/n]" "n" 10)
+    status=$?
+    if [ $status -eq 200 ] || [ -z "$REINSTALL_ROUNDCUBE" ]; then
+      REINSTALL_ROUNDCUBE="n"
+    fi
+  fi
+fi
+if [ "${OPTIONS[wp_cli]}" = "1" ]; then
+  if [ -x "/usr/local/bin/wp" ]; then
+    REINSTALL_WP_CLI=$(prompt_with_getinput "WP-CLI already installed. Re-install? [y/n]" "n" 10)
+    status=$?
+    if [ $status -eq 200 ] || [ -z "$REINSTALL_WP_CLI" ]; then
+      REINSTALL_WP_CLI="n"
+    fi
+  fi
+fi
+if [ "${OPTIONS[pyenv_python]}" = "1" ]; then
+  if [ -n "$SUDO_USER" ]; then
+    if sudo -u "$SUDO_USER" bash -lc '
+      export PYENV_ROOT="$HOME/.pyenv"
+      [[ -d "$PYENV_ROOT/bin" ]] && export PATH="$PYENV_ROOT/bin:$PATH"
+      command -v pyenv >/dev/null 2>&1 || exit 1
+      eval "$(pyenv init - bash)" >/dev/null 2>&1 || true
+      pyenv versions 2>/dev/null | grep -q "3\.13"
+    '; then
+      REINSTALL_PYENV=$(prompt_with_getinput "Pyenv and Python 3.13 already installed. Re-install? [y/n]" "n" 10)
+      status=$?
+      if [ $status -eq 200 ] || [ -z "$REINSTALL_PYENV" ]; then
+        REINSTALL_PYENV="n"
+      fi
+    fi
+  fi
+fi
+if [ "${OPTIONS[podman]}" = "1" ]; then
+  if command -v podman &>/dev/null; then
+    REINSTALL_PODMAN=$(prompt_with_getinput "Podman already installed. Re-install? [y/n]" "n" 10)
+    status=$?
+    if [ $status -eq 200 ] || [ -z "$REINSTALL_PODMAN" ]; then
+      REINSTALL_PODMAN="n"
+    fi
+  fi
+fi
+if [ "${OPTIONS[lazydocker]}" = "1" ]; then
+  if [ -x "/usr/bin/lazydocker" ]; then
+    REINSTALL_LAZYDOCKER=$(prompt_with_getinput "LazyDocker already installed. Re-install? [y/n]" "n" 10)
+    status=$?
+    if [ $status -eq 200 ] || [ -z "$REINSTALL_LAZYDOCKER" ]; then
+      REINSTALL_LAZYDOCKER="n"
+    fi
+  fi
+fi
+if [ "${OPTIONS[portainer]}" = "1" ]; then
+  if podman volume inspect portainer_data &>/dev/null && [ -f "/opt/compose/portainer/compose.yaml" ]; then
+    REINSTALL_PORTAINER=$(prompt_with_getinput "Portainer already set up. Re-install? [y/n]" "n" 10)
+    status=$?
+    if [ $status -eq 200 ] || [ -z "$REINSTALL_PORTAINER" ]; then
+      REINSTALL_PORTAINER="n"
+    fi
+  fi
+fi
 
 print_status "Updating package lists and upgrading existing packages, this will take a moment... "
 {
@@ -843,7 +926,7 @@ if [ "${OPTIONS[fail2ban_vpn_bypass]}" = "1" ]; then
   fi
 fi
 if [ "${OPTIONS[surfshark]}" = "1" ]; then
-  if dpkg -s surfshark &>/dev/null; then
+  if dpkg -s surfshark &>/dev/null && [[ ! "${REINSTALL_SURFSHARK:-n}" =~ ^[Yy]$ ]]; then
     print_status "surfshark already installed. Skipping... "
     echo
   else
@@ -878,16 +961,21 @@ if [ "${OPTIONS[webserver]}" = "1" ]; then
   fi
 fi
 if [ "${OPTIONS[apache_domains]}" = "1" ]; then
+  TOOLS_INSTALLED=false
   if command -v a2sitemgr >/dev/null 2>&1 && \
      command -v fqdncredmgr >/dev/null 2>&1 && \
      command -v fqdnmgr >/dev/null 2>&1 && \
      command -v a2wcrecalc >/dev/null 2>&1; then
+    TOOLS_INSTALLED=true
+  fi
+  if [ "$TOOLS_INSTALLED" = true ] && [[ ! "${REINSTALL_APACHE_DOMAINS:-n}" =~ ^[Yy]$ ]]; then
     print_status "Apache domain management tools already installed. Skipping... "
     echo
   else
     print_status "Installing Apache domain management tools... "
     {
       apt install -y whois sqlite3 libxml2-utils jq
+      rm -rf a2tools
       mkdir a2tools && cd a2tools
       git clone https://github.com/TBAIKamine/a2tools.git .
       bash ./setup.sh
@@ -898,29 +986,25 @@ if [ "${OPTIONS[apache_domains]}" = "1" ]; then
     echo
   fi
 fi
-if ! command -v fsubid >/dev/null 2>&1; then
-  print_status "Installing fsubid... "
-  {
-    mkdir -p /usr/local/bin/fsubid.d
-    cp "$ABS_PATH/helpers/fsubid.d/fsubid.sh" /usr/local/bin/fsubid.d/
-    cp "$ABS_PATH/helpers/fsubid.d/usage.txt" /usr/local/bin/fsubid.d/
-    chmod +x /usr/local/bin/fsubid.d/fsubid.sh
-    ln -sf /usr/local/bin/fsubid.d/fsubid.sh /usr/local/bin/fsubid
-  } >>./log 2>&1
-  echo "Done"
-fi
-if ! command -v podmgr >/dev/null 2>&1; then
-  print_status "Installing podmgr... "
-  {
-    mkdir -p /usr/local/bin/podmgr.d
-    cp "$ABS_PATH/helpers/podmgr.d/podmgr.sh" /usr/local/bin/podmgr.d/
-    cp "$ABS_PATH/helpers/podmgr.d/usage.txt" /usr/local/bin/podmgr.d/
-    cp "$ABS_PATH/helpers/podmgr.d/podman-compose.service.tpl" /usr/local/bin/podmgr.d/
-    chmod +x /usr/local/bin/podmgr.d/podmgr.sh
-    ln -sf /usr/local/bin/podmgr.d/podmgr.sh /usr/local/bin/podmgr
-  } >>./log 2>&1
-  echo "Done"
-fi
+print_status "Installing fsubid... "
+{
+  mkdir -p /usr/local/bin/fsubid.d
+  cp "$ABS_PATH/helpers/fsubid.d/fsubid.sh" /usr/local/bin/fsubid.d/
+  cp "$ABS_PATH/helpers/fsubid.d/usage.txt" /usr/local/bin/fsubid.d/
+  chmod +x /usr/local/bin/fsubid.d/fsubid.sh
+  ln -sf /usr/local/bin/fsubid.d/fsubid.sh /usr/local/bin/fsubid
+} >>./log 2>&1
+echo "Done"
+print_status "Installing podmgr... "
+{
+  mkdir -p /usr/local/bin/podmgr.d
+  cp "$ABS_PATH/helpers/podmgr.d/podmgr.sh" /usr/local/bin/podmgr.d/
+  cp "$ABS_PATH/helpers/podmgr.d/usage.txt" /usr/local/bin/podmgr.d/
+  cp "$ABS_PATH/helpers/podmgr.d/podman-compose.service.tpl" /usr/local/bin/podmgr.d/
+  chmod +x /usr/local/bin/podmgr.d/podmgr.sh
+  ln -sf /usr/local/bin/podmgr.d/podmgr.sh /usr/local/bin/podmgr
+} >>./log 2>&1
+echo "Done"
 if [ "${OPTIONS[certbot]}" = "1" ]; then
   if dpkg -s certbot &>/dev/null; then
     print_status "Certbot already installed. Skipping... "
@@ -982,7 +1066,7 @@ if [ "${OPTIONS[phpmyadmin]}" = "1" ]; then
     fi
 fi
 if [ "${OPTIONS[roundcube]}" = "1" ]; then
-  if [ -d "/var/www/mail" ]; then
+  if [ -d "/var/www/mail" ] && [[ ! "${REINSTALL_ROUNDCUBE:-n}" =~ ^[Yy]$ ]]; then
     print_status "Roundcube webmail already installed. Skipping... "
     echo
   else
@@ -994,7 +1078,7 @@ if [ "${OPTIONS[roundcube]}" = "1" ]; then
   fi
 fi
 if [ "${OPTIONS[wp_cli]}" = "1" ]; then
-  if [ -x "/usr/local/bin/wp" ]; then
+  if [ -x "/usr/local/bin/wp" ] && [[ ! "${REINSTALL_WP_CLI:-n}" =~ ^[Yy]$ ]]; then
     print_status "WP-CLI already installed. Skipping... "
     echo
   else
@@ -1012,6 +1096,7 @@ fi
 if [ "${OPTIONS[pyenv_python]}" = "1" ]; then
   # Check pyenv/Python from the perspective of the normal user, not root
   if [ -n "$SUDO_USER" ]; then
+    PYENV_INSTALLED=false
     if sudo -u "$SUDO_USER" bash -lc '
       export PYENV_ROOT="$HOME/.pyenv"
       [[ -d "$PYENV_ROOT/bin" ]] && export PATH="$PYENV_ROOT/bin:$PATH"
@@ -1019,6 +1104,9 @@ if [ "${OPTIONS[pyenv_python]}" = "1" ]; then
       eval "$(pyenv init - bash)" >/dev/null 2>&1 || true
       pyenv versions 2>/dev/null | grep -q "3\.13"
     '; then
+      PYENV_INSTALLED=true
+    fi
+    if [ "$PYENV_INSTALLED" = true ] && [[ ! "${REINSTALL_PYENV:-n}" =~ ^[Yy]$ ]]; then
       print_status "Pyenv and Python 3.13 already installed. Skipping... "
       echo
     else
@@ -1047,7 +1135,7 @@ if [ "${OPTIONS[pyenv_python]}" = "1" ]; then
   fi
 fi
 if [ "${OPTIONS[podman]}" = "1" ]; then
-  if command -v podman &>/dev/null; then
+  if command -v podman &>/dev/null && [[ ! "${REINSTALL_PODMAN:-n}" =~ ^[Yy]$ ]]; then
     print_status "Podman already installed. Skipping... "
     echo
   else
@@ -1058,7 +1146,7 @@ if [ "${OPTIONS[podman]}" = "1" ]; then
   fi
 fi
 if [ "${OPTIONS[lazydocker]}" = "1" ]; then
-  if [ -x "/usr/bin/lazydocker" ]; then
+  if [ -x "/usr/bin/lazydocker" ] && [[ ! "${REINSTALL_LAZYDOCKER:-n}" =~ ^[Yy]$ ]]; then
     print_status "LazyDocker already installed. Skipping... "
     echo
   else
@@ -1072,7 +1160,11 @@ if [ "${OPTIONS[lazydocker]}" = "1" ]; then
   fi
 fi
 if [ "${OPTIONS[portainer]}" = "1" ]; then
+  PORTAINER_INSTALLED=false
   if podman volume inspect portainer_data &>/dev/null && [ -f "/opt/compose/portainer/compose.yaml" ]; then
+    PORTAINER_INSTALLED=true
+  fi
+  if [ "$PORTAINER_INSTALLED" = true ] && [[ ! "${REINSTALL_PORTAINER:-n}" =~ ^[Yy]$ ]]; then
     print_status "Portainer already set up. Skipping... "
     echo
   else

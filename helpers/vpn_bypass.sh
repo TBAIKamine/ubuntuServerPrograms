@@ -1,5 +1,5 @@
 #!/bin/bash
-
+echo "Setting up VPN bypass and security configurations..."
 ABS_PATH=$(dirname "$(realpath "$0")")
 
 # Non-interactive guard: the orchestrator must provide these values.
