@@ -1,10 +1,10 @@
 #!/bin/bash
 
 # --- VARIABLES TO CONFIGURE ---
-YOUR_INTERFACE="eth0"         # Your physical network interface (e.g., eth0, enp1s0)
-YOUR_LAN_SUBNET="192.168.0.0/24" # Your local network subnet
-YOUR_DEFAULT_GATEWAY="192.168.0.1" # The IP of your router/gateway
-YOUR_PUBLIC_IP="192.168.0.2"   # The IP address of your Ubuntu server on the LAN
+YOUR_INTERFACE=""         # Your physical network interface (e.g., eth0, enp1s0)
+YOUR_LAN_SUBNET="" # Your local network subnet
+YOUR_DEFAULT_GATEWAY="" # The IP of your router/gateway
+YOUR_PUBLIC_IP=""   # The IP address of your Ubuntu server on the LAN
 # ------------------------------
 
 # 1. Add entry to /etc/iproute2/rt_tables if it doesn't exist
