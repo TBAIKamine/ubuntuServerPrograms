@@ -9,6 +9,10 @@ unset DMS_GITHUB_URL
 if [[ -n "${FQDN:-}" ]]; then
   sed -i -E "s/^([[:space:]]*hostname:[[:space:]]*)mail\.example\.com([[:space:]]*)$/\1mail.${FQDN}\2/" "$DMS_DIR/compose.yaml"
 fi
+sed -i '/container_name:/a\
+    dns:\
+      - 1.1.1.1\
+      - 8.8.8.8' "$DMS_DIR/compose.yaml"
 sed -i '/env_file: mailserver.env/a\
     environment:\
       - SPOOF_PROTECTION=1\
