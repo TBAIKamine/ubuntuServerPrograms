@@ -63,7 +63,7 @@ EOF
 
   run_hook "$pre_hook"
 
-  local subid_range=$(fsubid)
+  local subid_range=$(fsubid "$user")
   grep -q "^$user:" /etc/subuid 2>/dev/null || usermod --add-subuids "$subid_range" "$user"
   grep -q "^$user:" /etc/subgid 2>/dev/null || usermod --add-subgids "$subid_range" "$user"
   sudo -u "$user" -H bash -c "podman system migrate" 2>/dev/null || true
