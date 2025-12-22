@@ -1210,13 +1210,13 @@ if [ "${OPTIONS[portainer]}" = "1" ]; then
   fi
 fi
 if [ "${OPTIONS[docker_mailserver]}" = "1" ]; then
-  if [ "${DMS_REINSTALL:-false}" = true ]; then
+  if [[ "${REINSTALL_DMS:-n}" =~ ^[Yy]$ ]] || [ "${DMS_REINSTALL:-false}" = true ]; then
     print_status "Performing complete DMS cleanup for reinstall... "
     podmgr cleanup --user dms --compose-dir /opt/compose/docker-mailserver >>./log 2>&1
     echo "Done"
   fi
   
-  if [ -f "/opt/compose/docker-mailserver/compose.yaml" ] && [ "${DMS_REINSTALL:-false}" = false ]; then
+  if [ -f "/opt/compose/docker-mailserver/compose.yaml" ] && [[ ! "${REINSTALL_DMS:-n}" =~ ^[Yy]$ ]]; then
     print_status "Docker Mailserver already set up. Skipping... "
     echo
   else
@@ -1296,10 +1296,13 @@ if [ "${OPTIONS[grafana_otel]}" = "1" ]; then
 fi
 # cleanup
 dms_acl_hook() {
-  setfacl -R -m u:dms:rx /etc/letsencrypt/live
-  setfacl -R -m u:dms:rx /etc/letsencrypt/archive
-  setfacl -R -d -m u:dms:rx /etc/letsencrypt/live
-  setfacl -R -d -m u:dms:rx /etc/letsencrypt/archive
+  # Only set ACLs if the dms user exists
+  if id "dms" &>/dev/null; then
+    setfacl -R -m u:dms:rx /etc/letsencrypt/live
+    setfacl -R -m u:dms:rx /etc/letsencrypt/archive
+    setfacl -R -d -m u:dms:rx /etc/letsencrypt/live
+    setfacl -R -d -m u:dms:rx /etc/letsencrypt/archive
+  fi
 }
 if [ "${OPTIONS[docker_mailserver]}" = "1" ]; then
   if [ -d "/etc/letsencrypt/live" ]; then

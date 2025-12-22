@@ -64,8 +64,13 @@ EOF
   run_hook "$pre_hook"
 
   local subid_range=$(fsubid "$user")
-  grep -q "^$user:" /etc/subuid 2>/dev/null || usermod --add-subuids "$subid_range" "$user"
-  grep -q "^$user:" /etc/subgid 2>/dev/null || usermod --add-subgids "$subid_range" "$user"
+  # Convert START:SIZE to START-END format for usermod
+  local subid_start=$(echo "$subid_range" | cut -d: -f1)
+  local subid_size=$(echo "$subid_range" | cut -d: -f2)
+  local subid_end=$((subid_start + subid_size - 1))
+  local usermod_range="${subid_start}-${subid_end}"
+  grep -q "^$user:" /etc/subuid 2>/dev/null || usermod --add-subuids "$usermod_range" "$user"
+  grep -q "^$user:" /etc/subgid 2>/dev/null || usermod --add-subgids "$usermod_range" "$user"
   sudo -u "$user" -H bash -c "podman system migrate" 2>/dev/null || true
 
   run_hook "$post_hook"

@@ -1,12 +1,16 @@
 fsubid - Generate next available subuid/subgid range
 
 USAGE:
-  fsubid
+  fsubid [username]
+
+ARGUMENTS:
+  username    Target user (optional, defaults to SUDO_USER)
+              Also fixes the first user's range to 100000:70000
 
 OUTPUT:
-  Prints a range like "100000-104999" suitable for usermod --add-subuids
+  Prints a range like "170000:70000" (START:SIZE format)
+  podmgr will convert this to START-END format for usermod
 
 EXAMPLE:
-  RANGE=$(fsubid)
-  usermod --add-subuids "$RANGE" myuser
-  usermod --add-subgids "$RANGE" myuser
+  RANGE=$(fsubid dms)
+  # podmgr handles the conversion to START-END format for usermod
