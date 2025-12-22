@@ -17,23 +17,22 @@ if [[ -z "$TARGET_USER" || "$TARGET_USER" == "root" ]]; then
 fi
 
 RANGE_SIZE=70000
-SUDO_USER_START=100000
-SUDO_USER_END=$((SUDO_USER_START + RANGE_SIZE - 1))
-NEXT_USER_START=$((SUDO_USER_END + 1))
+FIRST_USER_START=100000
+NEXT_USER_START=$((FIRST_USER_START + RANGE_SIZE))
 
-# Ensure $TARGET_USER has the correct range in /etc/subuid and /etc/subgid
+# Fix the first user's range to 100000:70000 (they typically get 100000:65536 by default)
 for file in /etc/subuid /etc/subgid; do
-  if [ -f "$file" ]; then
-    # Remove any existing entry for $TARGET_USER
-    sudo sed -i "/^$TARGET_USER:/d" "$file"
-    # Add the correct range for $TARGET_USER
-    echo "$TARGET_USER:$SUDO_USER_START:$RANGE_SIZE" | sudo tee -a "$file" > /dev/null
+  if [ -f "$file" ] && [ -s "$file" ]; then
+    FIRST_USER=$(head -1 "$file" | cut -d: -f1)
+    if [ -n "$FIRST_USER" ]; then
+      sudo sed -i "1s/.*/$FIRST_USER:$FIRST_USER_START:$RANGE_SIZE/" "$file"
+    fi
   fi
 done
 
 # Calculate next available range starting from 170000
 if [ -s /etc/subuid ]; then
-  LAST_END=$(awk -F: -v user="$TARGET_USER" '$1 != user {print $2 + $3}' /etc/subuid | sort -n | tail -1)
+  LAST_END=$(awk -F: '{print $2 + $3}' /etc/subuid | sort -n | tail -1)
   NEXT_START=$((LAST_END > NEXT_USER_START ? LAST_END : NEXT_USER_START))
 else
   NEXT_START=$NEXT_USER_START
