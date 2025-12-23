@@ -16,5 +16,5 @@ fi
 chown -R "$GITEA_OWNER:$GITEA_OWNER" $GITEA_DIR
 
 if [ -n "$FQDN" ]; then
-  a2sitemgr -d "gitea.$FQDN" --mode proxypass -p 3000
+  sudo a2sitemgr -d "gitea.$FQDN" --mode proxypass -p 3000
 fi
