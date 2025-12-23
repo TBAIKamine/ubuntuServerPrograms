@@ -69,7 +69,7 @@ EOF
   local usermod_range="${subid_start}-${subid_end}"
   grep -q "^$user:" /etc/subuid 2>/dev/null || usermod --add-subuids "$usermod_range" "$user"
   grep -q "^$user:" /etc/subgid 2>/dev/null || usermod --add-subgids "$usermod_range" "$user"
-  sudo -u "$user" -H bash -c "podman system migrate" 2>/dev/null || true
+  sudo -u "$user" -H bash -c "cd '$home_dir' && podman system migrate" 2>/dev/null || true
 
   [ -d "$compose_dir" ] && chown -R "$user:$user" "$compose_dir"
 
@@ -88,9 +88,9 @@ EOF
   # Run hook right before enabling services (user setup complete, runtime dir ready)
   run_hook "$hook"
 
-  sudo -u "$user" -H bash -c "source '$env_file' && systemctl --user daemon-reload" 2>/dev/null || true
-  sudo -u "$user" -H bash -c "source '$env_file' && systemctl --user enable --now '$service_name'" 2>/dev/null || true
-  sudo -u "$user" -H bash -c "source '$env_file' && systemctl --user enable --now podman.socket" 2>/dev/null || true
+  sudo -u "$user" -H bash -c "cd '$home_dir' && source '$env_file' && systemctl --user daemon-reload" 2>/dev/null || true
+  sudo -u "$user" -H bash -c "cd '$home_dir' && source '$env_file' && systemctl --user enable --now '$service_name'" 2>/dev/null || true
+  sudo -u "$user" -H bash -c "cd '$home_dir' && source '$env_file' && systemctl --user enable --now podman.socket" 2>/dev/null || true
 
   echo "Created user $user"
 }

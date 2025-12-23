@@ -9,6 +9,7 @@ n8n_volume_hook() {
   local uid_num=$(id -u n8n)
   sudo -u n8n -H bash -c "XDG_RUNTIME_DIR='/run/user/$uid_num' podman volume create n8n_data" 2>/dev/null || true
 }
+export -f n8n_volume_hook
 
 if [ "${N8N_SYS_USER:-false}" = "true" ]; then
   N8N_OWNER="n8n"

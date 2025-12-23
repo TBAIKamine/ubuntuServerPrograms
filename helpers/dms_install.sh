@@ -81,3 +81,40 @@ if [ "${DMS_SYS_USER:-false}" = "true" ]; then
 else
   DMS_OWNER="$SUDO_USER"
 fi
+
+# Add email account if email and password were provided
+if [ -n "${DMS_EMAIL:-}" ] && [ -n "${DMS_EMAIL_PASSWORD:-}" ]; then
+  echo "Adding email account $DMS_EMAIL to mailserver..."
+  # Determine which user owns the container
+  if [ "${DMS_SYS_USER:-false}" = "true" ]; then
+    DMS_EXEC_USER="dms"
+    DMS_UID=$(id -u dms 2>/dev/null)
+    DMS_ENV_FILE="/var/lib/dms/.config/environment.d/podman.conf"
+  else
+    DMS_EXEC_USER="$SUDO_USER"
+    DMS_UID=$(id -u "$SUDO_USER" 2>/dev/null)
+    DMS_ENV_FILE=""
+  fi
+  
+  # Wait a moment for container to be ready
+  sleep 5
+  
+  # Try to add email account, handle container not running gracefully
+  if [ -n "$DMS_ENV_FILE" ] && [ -f "$DMS_ENV_FILE" ]; then
+    # System user with env file
+    if ! sudo -u "$DMS_EXEC_USER" -H bash -c "source '$DMS_ENV_FILE' && podman exec mailserver setup email add '$DMS_EMAIL' '$DMS_EMAIL_PASSWORD'"; then
+      echo "Warning: email $DMS_EMAIL failed adding - container may not be running yet. Add manually with: podmgr exec dms, then: setup email add $DMS_EMAIL <password>"
+    else
+      echo "Done"
+    fi
+  else
+    # Regular user
+    if ! sudo -u "$DMS_EXEC_USER" -H bash -c "podman exec mailserver setup email add '$DMS_EMAIL' '$DMS_EMAIL_PASSWORD'"; then
+      echo "Warning: email $DMS_EMAIL failed adding - container may not be running yet. Add manually with: podman exec -it mailserver setup email add $DMS_EMAIL <password>"
+    else
+      echo "Done"
+    fi
+  fi
+  # Clear password from memory
+  unset DMS_EMAIL_PASSWORD
+fi
