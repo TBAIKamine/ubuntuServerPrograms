@@ -733,23 +733,24 @@ if [ "${OPTIONS[docker_mailserver]}" = "1" ]; then
               USE_EXISTING_FQDN="n"
             fi
             if [[ "$USE_EXISTING_FQDN" =~ ^[Yy]$ ]]; then
-              DMS_HOSTNAME="$FQDN"
+              DMS_FQDN="$FQDN"
               break 2
             fi
           fi
-          DMS_HOSTNAME=$(prompt_with_getinput "Enter FQDN for docker mailserver" "" 10 "visible" "false" "true" "false")
+          DMS_FQDN_INPUT=$(prompt_with_getinput "Enter FQDN for docker mailserver" "" 10 "visible" "false" "true" "false")
           status=$?
           if [ $status -eq 200 ]; then
             # user chose to skip
             SKIP_DMS=true
             break 2
           fi
-          if is_valid_fqdn "$DMS_HOSTNAME"; then
+          if is_valid_fqdn "$DMS_FQDN_INPUT"; then
             # Valid FQDN provided
+            DMS_FQDN="$DMS_FQDN_INPUT"
             break 2  # Break out of both loops
           else
             # Invalid FQDN; loop back unless user uses skip
-            echo "Error: Invalid FQDN format: $DMS_HOSTNAME" >&2
+            echo "Error: Invalid FQDN format: $DMS_FQDN_INPUT" >&2
           fi
         done
       elif [ "$DMS_CHOICE" = "2" ]; then
@@ -765,6 +766,8 @@ if [ "${OPTIONS[docker_mailserver]}" = "1" ]; then
             fi
             if [ "$USE_CERTBOT_EMAIL" = "y" ] || [ "$USE_CERTBOT_EMAIL" = "Y" ]; then
               DMS_EMAIL="$CERTBOT_EMAIL"
+              # Extract domain from email for DMS_FQDN
+              DMS_FQDN="${CERTBOT_EMAIL#*@}"
               break 2  # Break out of both loops
             fi
           fi
@@ -778,6 +781,8 @@ if [ "${OPTIONS[docker_mailserver]}" = "1" ]; then
           if is_valid_email "$DMS_EMAIL_INPUT"; then
             # Valid email provided
             DMS_EMAIL="$DMS_EMAIL_INPUT"
+            # Extract domain from email for DMS_FQDN
+            DMS_FQDN="${DMS_EMAIL_INPUT#*@}"
             break 2  # Break out of both loops
           else
             # Invalid email; loop back unless user uses skip
@@ -1222,7 +1227,7 @@ if [ "${OPTIONS[docker_mailserver]}" = "1" ]; then
   else
     print_status "Installing Docker Mailserver... "
     # pass DMS_EMAIL/DMS_HOSTNAME/DMS_SYS_USER into the helper's environment so it can use them
-    DMS_EMAIL="$DMS_EMAIL" DMS_HOSTNAME="$DMS_HOSTNAME" DMS_SYS_USER="${DMS_SYS_USER:-false}" FQDN="${FQDN:-}" bash ./helpers/dms_install.sh >>./log 2>&1 &
+    DMS_EMAIL="${DMS_EMAIL:-}" DMS_FQDN="${DMS_FQDN:-}" DMS_SYS_USER="${DMS_SYS_USER:-false}" bash ./helpers/dms_install.sh >>./log 2>&1 &
     bash ./helpers/progress.sh $!
     echo
   fi

@@ -6,34 +6,43 @@ wget "${DMS_GITHUB_URL}/compose.yaml" -O $DMS_DIR/compose.yaml
 wget "${DMS_GITHUB_URL}/mailserver.env" -O $DMS_DIR/mailserver.env
 unset DMS_GITHUB_URL
 
-if [[ -n "${FQDN:-}" ]]; then
-  sed -i -E "s/^([[:space:]]*hostname:[[:space:]]*)mail\.example\.com([[:space:]]*)$/\1mail.${FQDN}\2/" "$DMS_DIR/compose.yaml"
+# Apply DMS_FQDN to compose file as mail.${DMS_FQDN}
+if [[ -n "${DMS_FQDN:-}" ]]; then
+  sed -i -E "s/^([[:space:]]*hostname:[[:space:]]*)mail\.example\.com([[:space:]]*)$/\1mail.${DMS_FQDN}\2/" "$DMS_DIR/compose.yaml"
 fi
+
+# Determine notification email: use DMS_EMAIL if set, otherwise fallback to noemail@DMS_FQDN
+if [[ -n "${DMS_EMAIL:-}" ]]; then
+  NOTIFICATION_EMAIL="$DMS_EMAIL"
+elif [[ -n "${DMS_FQDN:-}" ]]; then
+  NOTIFICATION_EMAIL="noemail@${DMS_FQDN}"
+fi
+
 sed -i '/container_name:/a\
     dns:\
       - 1.1.1.1\
       - 8.8.8.8' "$DMS_DIR/compose.yaml"
-sed -i '/env_file: mailserver.env/a\
-    environment:\
-      - SPOOF_PROTECTION=1\
-      - ENABLE_POP3=1\
-      - ENABLE_POLICYD_SPF=0\
-      - ENABLE_CLAMAV=1\
-      - ENABLE_RSPAMD=1\
-      - ENABLE_RSPAMD_REDIS=1\
-      - RSPAMD_LEARN=1\
-      - RSPAMD_GREYLISTING=1\
-      - ENABLE_AMAVIS=0\
-      - ENABLE_OPENDKIM=0\
-      - ENABLE_OPENDMARC=0\
-      - SSL_TYPE=letsencrypt\
-      - POSTFIX_MESSAGE_SIZE_LIMIT=0\
-      - PFLOGSUMM_TRIGGER=logrotate\
-      - PFLOGSUMM_RECIPIENT=$DMS_EMAIL\
-      - LOGWATCH_INTERVAL=weekly\
-      - LOGWATCH_RECIPIENT=$DMS_EMAIL\
-      - REPORT_SENDER=$DMS_EMAIL\
-      - ENABLE_MTA_STS=1' $DMS_DIR/compose.yaml
+sed -i "/env_file: mailserver.env/a\\
+    environment:\\
+      - SPOOF_PROTECTION=1\\
+      - ENABLE_POP3=1\\
+      - ENABLE_POLICYD_SPF=0\\
+      - ENABLE_CLAMAV=1\\
+      - ENABLE_RSPAMD=1\\
+      - ENABLE_RSPAMD_REDIS=1\\
+      - RSPAMD_LEARN=1\\
+      - RSPAMD_GREYLISTING=1\\
+      - ENABLE_AMAVIS=0\\
+      - ENABLE_OPENDKIM=0\\
+      - ENABLE_OPENDMARC=0\\
+      - SSL_TYPE=letsencrypt\\
+      - POSTFIX_MESSAGE_SIZE_LIMIT=0\\
+      - PFLOGSUMM_TRIGGER=logrotate\\
+      - PFLOGSUMM_RECIPIENT=${NOTIFICATION_EMAIL}\\
+      - LOGWATCH_INTERVAL=weekly\\
+      - LOGWATCH_RECIPIENT=${NOTIFICATION_EMAIL}\\
+      - REPORT_SENDER=${NOTIFICATION_EMAIL}\\
+      - ENABLE_MTA_STS=1" $DMS_DIR/compose.yaml
 sed -i '/^[[:space:]]*healthcheck:/,/^[[:space:]]*retries:/d' $DMS_DIR/compose.yaml
 awk -i inplace '{if ($0 ~ /^[[:space:]]*- "[0-9]+:[0-9]+"/) {match($0, /^([[:space:]]*- ")([0-9]+):([0-9]+)"/, arr); print arr[1] arr[2]+1000 ":" arr[3] "\""} else print}' $DMS_DIR/compose.yaml
 sed -i '/^  mailserver:/,/^  [A-Za-z0-9_-]\+:/ { /^[[:space:]]*volumes:[[:space:]]*$/a\
