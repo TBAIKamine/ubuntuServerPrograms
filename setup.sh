@@ -946,28 +946,6 @@ if [ -n "$SUDO_SECRET" ]; then
     echo
   fi
 fi
-if [ "${OPTIONS[fail2ban_vpn_bypass]}" = "1" ]; then
-  # Values must have been collected during the '# prompts first' phase.
-  # Helper is idempotent, so safe to re-run (no duplicate rules).
-  if [ -n "${YOUR_INTERFACE:-}" ] && \
-     [ -n "${YOUR_LAN_SUBNET:-}" ] && \
-     [ -n "${YOUR_DEFAULT_GATEWAY:-}" ] && \
-     [ -n "${YOUR_PUBLIC_IP:-}" ]; then
-    print_status "Installing Fail2Ban VPN bypass... "
-    {
-      YOUR_INTERFACE="$YOUR_INTERFACE" \
-      YOUR_LAN_SUBNET="$YOUR_LAN_SUBNET" \
-      YOUR_DEFAULT_GATEWAY="$YOUR_DEFAULT_GATEWAY" \
-      YOUR_PUBLIC_IP="$YOUR_PUBLIC_IP" \
-      bash ./helpers/vpn_bypass.sh
-    } >>./log 2>&1 &
-    bash ./helpers/progress.sh $!
-    echo
-  else
-    # skipped earlier (preseed values missing or user chose skip)
-    echo
-  fi
-fi
 if [ "${OPTIONS[surfshark]}" = "1" ]; then
   if dpkg -s surfshark &>/dev/null && [[ ! "${REINSTALL_SURFSHARK:-n}" =~ ^[Yy]$ ]]; then
     print_status "surfshark already installed. Skipping... "
@@ -1175,6 +1153,28 @@ if [ "${OPTIONS[pyenv_python]}" = "1" ]; then
       bash ./helpers/progress.sh $!
       echo
     fi
+  fi
+fi
+if [ "${OPTIONS[fail2ban_vpn_bypass]}" = "1" ]; then
+  # Values must have been collected during the '# prompts first' phase.
+  # Helper is idempotent, so safe to re-run (no duplicate rules).
+  if [ -n "${YOUR_INTERFACE:-}" ] && \
+     [ -n "${YOUR_LAN_SUBNET:-}" ] && \
+     [ -n "${YOUR_DEFAULT_GATEWAY:-}" ] && \
+     [ -n "${YOUR_PUBLIC_IP:-}" ]; then
+    print_status "Installing Fail2Ban VPN bypass... "
+    {
+      YOUR_INTERFACE="$YOUR_INTERFACE" \
+      YOUR_LAN_SUBNET="$YOUR_LAN_SUBNET" \
+      YOUR_DEFAULT_GATEWAY="$YOUR_DEFAULT_GATEWAY" \
+      YOUR_PUBLIC_IP="$YOUR_PUBLIC_IP" \
+      bash ./helpers/vpn_bypass.sh
+    } >>./log 2>&1 &
+    bash ./helpers/progress.sh $!
+    echo
+  else
+    # skipped earlier (preseed values missing or user chose skip)
+    echo
   fi
 fi
 if [ "${OPTIONS[podman]}" = "1" ]; then
