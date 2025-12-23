@@ -1086,18 +1086,6 @@ if [ "${OPTIONS[phpmyadmin]}" = "1" ]; then
       fi
     fi
 fi
-if [ "${OPTIONS[roundcube]}" = "1" ]; then
-  if [ -d "/var/www/mail" ] && [[ ! "${REINSTALL_ROUNDCUBE:-n}" =~ ^[Yy]$ ]]; then
-    print_status "Roundcube webmail already installed. Skipping... "
-    echo
-  else
-    print_status "Installing Roundcube webmail... "
-    # pass FQDN into the helper so it can configure vhosts when provided
-    FQDN="$FQDN" bash ./helpers/roundcube_install.sh >>./log 2>&1 &
-    bash ./helpers/progress.sh $!
-    echo
-  fi
-fi
 if [ "${OPTIONS[wp_cli]}" = "1" ]; then
   if [ -x "/usr/local/bin/wp" ] && [[ ! "${REINSTALL_WP_CLI:-n}" =~ ^[Yy]$ ]]; then
     print_status "WP-CLI already installed. Skipping... "
@@ -1336,6 +1324,18 @@ fi
 if [ "${OPTIONS[grafana_otel]}" = "1" ]; then
     echo "Installing Grafana with OpenTelemetry LGTM stack..."
     # TODO: Implement Grafana + OTEL installation logic
+fi
+if [ "${OPTIONS[roundcube]}" = "1" ]; then
+  if [ -d "/var/www/mail" ] && [[ ! "${REINSTALL_ROUNDCUBE:-n}" =~ ^[Yy]$ ]]; then
+    print_status "Roundcube webmail already installed. Skipping... "
+    echo
+  else
+    print_status "Installing Roundcube webmail... "
+    # pass FQDN into the helper so it can configure vhosts when provided
+    FQDN="$FQDN" bash ./helpers/roundcube_install.sh >>./log 2>&1 &
+    bash ./helpers/progress.sh $!
+    echo
+  fi
 fi
 # cleanup
 dms_acl_hook() {

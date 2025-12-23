@@ -27,9 +27,9 @@ else
   echo "\$config['username_domain_forced'] = true;" >> "$RC_CONFIG_FILE"
 fi
 if [ -n "$FQDN" ]; then
-	a2sitemgr -d "mail.*" --mode swc
+	sudo a2sitemgr -d "mail.*" --mode swc
 fi
 if [ -f /etc/apache2/sites-available/mail.conf ]; then
-  a2ensite mail.conf
+  sudo a2ensite mail.conf
 fi
 systemctl restart apache2
