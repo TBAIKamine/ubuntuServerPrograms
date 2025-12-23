@@ -43,7 +43,7 @@ run_as_user() {
 }
 
 do_setup() {
-  local user="$1" compose_dir="$2" pre_hook="$3" post_hook="$4"
+  local user="$1" compose_dir="$2" hook="$3"
   local home_dir="/var/lib/$user"
   local service_name="$user.service"
 
@@ -61,8 +61,6 @@ EOF
 
   loginctl enable-linger "$user" 2>/dev/null || true
 
-  run_hook "$pre_hook"
-
   local subid_range=$(fsubid "$user")
   # Convert START:SIZE to START-END format for usermod
   local subid_start=$(echo "$subid_range" | cut -d: -f1)
@@ -72,8 +70,6 @@ EOF
   grep -q "^$user:" /etc/subuid 2>/dev/null || usermod --add-subuids "$usermod_range" "$user"
   grep -q "^$user:" /etc/subgid 2>/dev/null || usermod --add-subgids "$usermod_range" "$user"
   sudo -u "$user" -H bash -c "podman system migrate" 2>/dev/null || true
-
-  run_hook "$post_hook"
 
   [ -d "$compose_dir" ] && chown -R "$user:$user" "$compose_dir"
 
@@ -88,6 +84,9 @@ EOF
     sleep 1
     ((wait_count++))
   done
+
+  # Run hook right before enabling services (user setup complete, runtime dir ready)
+  run_hook "$hook"
 
   sudo -u "$user" -H bash -c "source '$env_file' && systemctl --user daemon-reload" 2>/dev/null || true
   sudo -u "$user" -H bash -c "source '$env_file' && systemctl --user enable --now '$service_name'" 2>/dev/null || true
@@ -137,9 +136,9 @@ do_cleanup() {
 }
 
 do_reinstall() {
-  local user="$1" compose_dir="$2" pre_hook="$3" post_hook="$4"
+  local user="$1" compose_dir="$2" hook="$3"
   do_cleanup "$user" "$compose_dir"
-  do_setup "$user" "$compose_dir" "$pre_hook" "$post_hook"
+  do_setup "$user" "$compose_dir" "$hook"
   echo "Reinstalled $user"
 }
 
@@ -210,8 +209,7 @@ do_lazydocker() {
 
 USER=""
 COMPOSE_DIR=""
-PRE_HOOK=""
-POST_HOOK=""
+HOOK=""
 CMD=""
 
 while [[ $# -gt 0 ]]; do
@@ -219,8 +217,7 @@ while [[ $# -gt 0 ]]; do
     setup|cleanup|reinstall|up|down|kill|ps|journal|exec|lazydocker) CMD="$1"; shift ;;
     --user|-u) USER="$2"; shift 2 ;;
     --compose-dir|-c) COMPOSE_DIR="$2"; shift 2 ;;
-    --pre-hook) PRE_HOOK="$2"; shift 2 ;;
-    --post-hook) POST_HOOK="$2"; shift 2 ;;
+    --hook) HOOK="$2"; shift 2 ;;
     -h|--help) show_usage ;;
     *)
       if [ -n "$CMD" ] && [ -z "$USER" ]; then
@@ -237,9 +234,9 @@ done
 [ -z "$COMPOSE_DIR" ] && COMPOSE_DIR="/opt/compose/$USER"
 
 case "$CMD" in
-  setup) do_setup "$USER" "$COMPOSE_DIR" "$PRE_HOOK" "$POST_HOOK" ;;
+  setup) do_setup "$USER" "$COMPOSE_DIR" "$HOOK" ;;
   cleanup) do_cleanup "$USER" "$COMPOSE_DIR" ;;
-  reinstall) do_reinstall "$USER" "$COMPOSE_DIR" "$PRE_HOOK" "$POST_HOOK" ;;
+  reinstall) do_reinstall "$USER" "$COMPOSE_DIR" "$HOOK" ;;
   up) do_up "$USER" ;;
   down) do_down "$USER" ;;
   kill) do_kill "$USER" ;;

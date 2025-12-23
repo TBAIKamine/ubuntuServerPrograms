@@ -53,6 +53,13 @@ sed -i '/^  mailserver:/,/^  [A-Za-z0-9_-]\+:/ { /^[[:space:]]*volumes:[[:space:
 mkdir -p $DMS_DIR/docker-data/dms/{mail-data,mail-state,mail-logs,config}
 
 ABS_PATH=$(dirname "$(realpath "$0")")
+chown -R "$DMS_OWNER:$DMS_OWNER" $DMS_DIR
+
+cp $ABS_PATH/postfix-main.cf $DMS_DIR/docker-data/dms/config/postfix-main.cf
+cp $ABS_PATH/user-patches.sh $DMS_DIR/docker-data/dms/config/user-patches.sh
+
+chown -R "$DMS_OWNER:$DMS_OWNER" $DMS_DIR/docker-data/dms/config/{postfix-main.cf,user-patches.sh}
+chmod -R 555 $DMS_DIR/docker-data/dms/config/{postfix-main.cf,user-patches.sh}
 
 dms_acl_hook() {
   if [ -d /etc/letsencrypt/live ]; then
@@ -64,20 +71,13 @@ dms_acl_hook() {
     setfacl -R -d -m u:dms:rx /etc/letsencrypt/archive
   fi
 }
+
 export -f dms_acl_hook
 
 if [ "${DMS_SYS_USER:-false}" = "true" ]; then
   DMS_OWNER="dms"
   apt install -y acl
-  podmgr setup --user dms --compose-dir "$DMS_DIR" --pre-hook dms_acl_hook
+  podmgr setup --user dms --compose-dir "$DMS_DIR" --hook dms_acl_hook
 else
   DMS_OWNER="$SUDO_USER"
 fi
-
-chown -R "$DMS_OWNER:$DMS_OWNER" $DMS_DIR
-
-cp $ABS_PATH/postfix-main.cf $DMS_DIR/docker-data/dms/config/postfix-main.cf
-cp $ABS_PATH/user-patches.sh $DMS_DIR/docker-data/dms/config/user-patches.sh
-
-chown -R "$DMS_OWNER:$DMS_OWNER" $DMS_DIR/docker-data/dms/config/{postfix-main.cf,user-patches.sh}
-chmod -R 555 $DMS_DIR/docker-data/dms/config/{postfix-main.cf,user-patches.sh}

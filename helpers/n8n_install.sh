@@ -13,7 +13,7 @@ n8n_volume_hook() {
 if [ "${N8N_SYS_USER:-false}" = "true" ]; then
   N8N_OWNER="n8n"
   apt install -y acl
-  podmgr setup --user n8n --post-hook n8n_volume_hook
+  podmgr setup --user n8n --hook n8n_volume_hook
 else
   N8N_OWNER="$SUDO_USER"
   podman volume create n8n_data

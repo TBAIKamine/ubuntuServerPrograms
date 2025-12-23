@@ -679,7 +679,15 @@ if [ "${OPTIONS[docker_mailserver]}" = "1" ]; then
       if [ -n "${PRESEED_DMS_EMAIL:-}" ]; then
         if is_valid_email "$PRESEED_DMS_EMAIL"; then
           DMS_EMAIL="$PRESEED_DMS_EMAIL"
+          DMS_FQDN="${PRESEED_DMS_EMAIL#*@}"
           echo "Using preseeded Docker Mailserver email: $DMS_EMAIL"
+          # Check for preseed password
+          if [ -n "${PRESEED_DMS_EMAIL_PASSWORD:-}" ]; then
+            DMS_EMAIL_PASSWORD="$PRESEED_DMS_EMAIL_PASSWORD"
+            echo "Using preseeded Docker Mailserver email password."
+          else
+            echo "Warning: No preseed password for DMS email, will skip email account creation."
+          fi
           SKIP_DMS=false
         else
           echo "Warning: Preseeded DMS email is invalid, falling back to prompt"
@@ -768,6 +776,21 @@ if [ "${OPTIONS[docker_mailserver]}" = "1" ]; then
               DMS_EMAIL="$CERTBOT_EMAIL"
               # Extract domain from email for DMS_FQDN
               DMS_FQDN="${CERTBOT_EMAIL#*@}"
+              # Prompt for email account password
+              while true; do
+                DMS_EMAIL_PASSWORD=$(prompt_with_getinput "Enter password for email account $DMS_EMAIL" "" 0 "dotted" "true" "true" "false")
+                status=$?
+                if [ $status -eq 200 ]; then
+                  # user chose to skip - cancel DMS setup
+                  SKIP_DMS=true
+                  unset DMS_EMAIL DMS_FQDN
+                  break 3
+                fi
+                if [ -n "$DMS_EMAIL_PASSWORD" ]; then
+                  break
+                fi
+                echo "Password cannot be empty. Please try again or press ESC to skip DMS setup." >&2
+              done
               break 2  # Break out of both loops
             fi
           fi
@@ -783,6 +806,21 @@ if [ "${OPTIONS[docker_mailserver]}" = "1" ]; then
             DMS_EMAIL="$DMS_EMAIL_INPUT"
             # Extract domain from email for DMS_FQDN
             DMS_FQDN="${DMS_EMAIL_INPUT#*@}"
+            # Prompt for email account password
+            while true; do
+              DMS_EMAIL_PASSWORD=$(prompt_with_getinput "Enter password for email account $DMS_EMAIL" "" 0 "dotted" "true" "true" "false")
+              status=$?
+              if [ $status -eq 200 ]; then
+                # user chose to skip - cancel DMS setup
+                SKIP_DMS=true
+                unset DMS_EMAIL DMS_FQDN
+                break 3
+              fi
+              if [ -n "$DMS_EMAIL_PASSWORD" ]; then
+                break
+              fi
+              echo "Password cannot be empty. Please try again or press ESC to skip DMS setup." >&2
+            done
             break 2  # Break out of both loops
           else
             # Invalid email; loop back unless user uses skip
@@ -1230,6 +1268,43 @@ if [ "${OPTIONS[docker_mailserver]}" = "1" ]; then
     DMS_EMAIL="${DMS_EMAIL:-}" DMS_FQDN="${DMS_FQDN:-}" DMS_SYS_USER="${DMS_SYS_USER:-false}" bash ./helpers/dms_install.sh >>./log 2>&1 &
     bash ./helpers/progress.sh $!
     echo
+    
+    # Add email account if email and password were provided
+    if [ -n "${DMS_EMAIL:-}" ] && [ -n "${DMS_EMAIL_PASSWORD:-}" ]; then
+      print_status "Adding email account $DMS_EMAIL to mailserver... "
+      # Determine which user owns the container
+      if [ "${DMS_SYS_USER:-false}" = "true" ]; then
+        DMS_EXEC_USER="dms"
+        DMS_UID=$(id -u dms 2>/dev/null)
+        DMS_ENV_FILE="/var/lib/dms/.config/environment.d/podman.conf"
+      else
+        DMS_EXEC_USER="$SUDO_USER"
+        DMS_UID=$(id -u "$SUDO_USER" 2>/dev/null)
+        DMS_ENV_FILE=""
+      fi
+      
+      # Wait a moment for container to be ready
+      sleep 5
+      
+      # Try to add email account, handle container not running gracefully
+      if [ -n "$DMS_ENV_FILE" ] && [ -f "$DMS_ENV_FILE" ]; then
+        # System user with env file
+        if ! sudo -u "$DMS_EXEC_USER" -H bash -c "source '$DMS_ENV_FILE' && podman exec mailserver setup email add '$DMS_EMAIL' '$DMS_EMAIL_PASSWORD'" >>./log 2>&1; then
+          echo "Warning: email $DMS_EMAIL failed adding - container may not be running yet. Add manually with: podmgr exec dms, then: setup email add $DMS_EMAIL <password>" >&2
+        else
+          echo "Done"
+        fi
+      else
+        # Regular user
+        if ! sudo -u "$DMS_EXEC_USER" -H bash -c "podman exec mailserver setup email add '$DMS_EMAIL' '$DMS_EMAIL_PASSWORD'" >>./log 2>&1; then
+          echo "Warning: email $DMS_EMAIL failed adding - container may not be running yet. Add manually with: podman exec -it mailserver setup email add $DMS_EMAIL <password>" >&2
+        else
+          echo "Done"
+        fi
+      fi
+      # Clear password from memory
+      unset DMS_EMAIL_PASSWORD
+    fi
   fi
 fi
 if [ "${OPTIONS[docker_mailserver]}" = "1" ] && [ "${OPTIONS[webserver]}" = "1" ] && [ "${OPTIONS[apache_domains]}" = "1" ]; then
