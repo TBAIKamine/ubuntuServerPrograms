@@ -39,7 +39,8 @@ run_as_user() {
   shift
   local env_file=$(get_user_env "$user")
   local compose_dir="${COMPOSE_DIR:-/opt/compose/$user}"
-  sudo -u "$user" -H bash -c "source '$env_file' && cd '$compose_dir' && $*"
+  local home_dir="/var/lib/$user"
+  sudo -u "$user" -H bash -c "cd '$home_dir' && source '$env_file' && cd '$compose_dir' && $*"
 }
 
 do_setup() {
@@ -110,18 +111,19 @@ do_cleanup() {
   local env_file=$(get_user_env "$user")
   if [ -n "$uid_num" ] && [ -d "/run/user/$uid_num" ]; then
     sudo -u "$user" -H bash -c "
+      cd '$home_dir'
       source '$env_file'
       systemctl --user disable --now '$service_name'
       systemctl --user disable --now podman.socket
     " 2>/dev/null || true
   fi
 
-  [ -n "$uid_num" ] && {
-    systemctl stop "user@$uid_num.service" 2>/dev/null || true
-    systemctl stop "user-runtime-dir@$uid_num.service" 2>/dev/null || true
-  }
-
   loginctl disable-linger "$user" 2>/dev/null || true
+
+  [ -n "$uid_num" ] && {
+    sudo systemctl stop "user@$uid_num.service" 2>/dev/null || true
+    sudo systemctl stop "user-runtime-dir@$uid_num.service" 2>/dev/null || true
+  }
 
   [ -f /etc/subuid ] && sed -i "/^$user:/d" /etc/subuid
   [ -f /etc/subgid ] && sed -i "/^$user:/d" /etc/subgid
@@ -156,7 +158,8 @@ do_kill() {
   local user="$1"
   local env_file=$(get_user_env "$user")
   local service_name="$user.service"
-  sudo -u "$user" -H bash -c "source '$env_file' && systemctl --user stop '$service_name'" 2>/dev/null || true
+  local home_dir="/var/lib/$user"
+  sudo -u "$user" -H bash -c "cd '$home_dir' && source '$env_file' && systemctl --user stop '$service_name'" 2>/dev/null || true
   echo "Stopped $user"
 }
 
@@ -174,27 +177,23 @@ do_journal() {
 do_exec() {
   local user="$1"
   local compose_dir="${COMPOSE_DIR:-/opt/compose/$user}"
+  local env_file=$(get_user_env "$user")
+  local home_dir="/var/lib/$user"
   
-  # Get container name from compose file
-  local compose_file="$compose_dir/docker-compose.yml"
-  [ ! -f "$compose_file" ] && compose_file="$compose_dir/docker-compose.yaml"
-  [ ! -f "$compose_file" ] && compose_file="$compose_dir/compose.yml"
-  [ ! -f "$compose_file" ] && compose_file="$compose_dir/compose.yaml"
-  
-  if [ ! -f "$compose_file" ]; then
-    echo "Error: No compose file found in $compose_dir"
-    exit 1
-  fi
-  
-  local container_name=$(grep -m1 'container_name:' "$compose_file" | sed 's/.*container_name:\s*//' | tr -d '"' | tr -d "'" | xargs)
+  # Get first running container name for this user
+  local container_name=$(sudo -u "$user" -H bash -c "
+    cd '$home_dir'
+    source '$env_file'
+    podman ps --format '{{.Names}}' | head -1
+  " 2>/dev/null)
   
   if [ -z "$container_name" ]; then
-    echo "Error: No container_name found in $compose_file"
+    echo "Error: No running containers found for user $user"
     exit 1
   fi
   
-  local env_file=$(get_user_env "$user")
   sudo -u "$user" -H bash -c "
+    cd '$home_dir'
     source '$env_file'
     cd '$compose_dir'
     podman exec -it '$container_name' bash
@@ -204,7 +203,8 @@ do_exec() {
 do_lazydocker() {
   local user="$1"
   local env_file=$(get_user_env "$user")
-  sudo -u "$user" -H bash -c "source '$env_file' && cd && lazydocker"
+  local home_dir="/var/lib/$user"
+  sudo -u "$user" -H bash -c "cd '$home_dir' && source '$env_file' && lazydocker"
 }
 
 USER=""

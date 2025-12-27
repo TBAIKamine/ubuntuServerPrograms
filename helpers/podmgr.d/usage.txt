@@ -16,17 +16,6 @@ COMMANDS:
 OPTIONS:
   -u, --user <name>        System username (required)
   -c, --compose-dir <path> Compose directory (default: /opt/compose/<user>)
-  --pre-hook <script|fn>   Run before subuid allocation
-  --post-hook <script|fn>  Run after subuid allocation
+  --hook <script|fn>       Run after subuid allocation
   -h, --help               Show this help
 
-EXAMPLES:
-  podmgr setup --user gitea
-  podmgr setup --user dms --compose-dir /opt/compose/docker-mailserver --pre-hook dms_acl_hook
-  podmgr cleanup --user n8n
-  podmgr reinstall --user gitea
-  podmgr up gitea
-  podmgr down dms
-  podmgr kill n8n
-  podmgr ps gitea
-  podmgr journal dms

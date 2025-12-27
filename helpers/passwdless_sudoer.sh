@@ -1,15 +1,18 @@
 #!/bin/bash
-# -- add conditional alias to .bashrc --
+# -- add conditional alias to .bashrc and .profile --
 {
-	BASHRC="/home/$SUDO_USER/.bashrc"
-	ALIAS_BLOCK=$'if [[ -n "$DEVICE_ACCESS" ]]; then\n    alias sudo=\'sudo /usr/local/bin/sudo-broker.sh\'\nfi'
-	if [ -f "$BASHRC" ]; then
-		if ! grep -Fxq "alias sudo='sudo /usr/local/bin/sudo-broker.sh'" "$BASHRC"; then
-			echo "$ALIAS_BLOCK" >> "$BASHRC"
+	ALIAS_BLOCK=$'if [[ -n "$DEVICE_ACCESS" ]]; then\n    alias sudo=\'/usr/local/bin/sudo-broker.sh\'\nfi'
+	
+	for RC_FILE in "/home/$SUDO_USER/.bashrc" "/home/$SUDO_USER/.profile"; do
+		if [ -f "$RC_FILE" ]; then
+			if ! grep -Fxq "alias sudo='/usr/local/bin/sudo-broker.sh'" "$RC_FILE"; then
+				echo "$ALIAS_BLOCK" >> "$RC_FILE"
+			fi
+		else
+			echo "$ALIAS_BLOCK" > "$RC_FILE"
+			chown "$SUDO_USER:$SUDO_USER" "$RC_FILE"
 		fi
-	else
-		echo "$ALIAS_BLOCK" > "$BASHRC"
-	fi
+	done
 }
 
 # -- allow the broker command to be executed without password from sudo --
@@ -34,7 +37,7 @@
 {
 	printf '%s' "$SUDO_SECRET" | tr -d '\r\n' | sha256sum | awk '{print $1}' | tee /etc/sudo_secret.hash
 	chmod 440 /etc/sudo_secret.hash
-	chown root:root /etc/sudo_secret.hash
+	chown root:$SUDO_USER /etc/sudo_secret.hash
 }
 
 # -- creating the passwdls helper script --

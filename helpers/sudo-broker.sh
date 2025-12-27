@@ -14,7 +14,7 @@ PROVIDED_HASH=$(printf '%s' "$PROVIDED_SECRET" | tr -d '\r\n' | sha256sum | awk 
 
 # 5. Compare the hashes
 if [ "$PROVIDED_HASH" == "$EXPECTED_HASH" ] && [ -n "$PROVIDED_SECRET" ]; then
-  # If hashes match, run the requested command via sudo, preserving all flags/args
+  # Call sudo with all flags/args preserved
   exec /usr/bin/sudo "$@"
 else
   # Failure: log the attempt and exit
