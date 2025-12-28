@@ -23,5 +23,5 @@ fi
 chown -R "$N8N_OWNER:$N8N_OWNER" $N8N_DIR
 
 if [ -n "$FQDN" ]; then
-  sudo a2sitemgr -d "n8n.$FQDN" --mode proxypass -p 5678
+  a2sitemgr -d "n8n.$FQDN" --mode proxypass -p 5678
 fi

@@ -25,7 +25,7 @@ for file in /etc/subuid /etc/subgid; do
   if [ -f "$file" ] && [ -s "$file" ]; then
     FIRST_USER=$(head -1 "$file" | cut -d: -f1)
     if [ -n "$FIRST_USER" ]; then
-      sudo sed -i "1s/.*/$FIRST_USER:$FIRST_USER_START:$RANGE_SIZE/" "$file"
+      sed -i "1s/.*/$FIRST_USER:$FIRST_USER_START:$RANGE_SIZE/" "$file"
     fi
   fi
 done

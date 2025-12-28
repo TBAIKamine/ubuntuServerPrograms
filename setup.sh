@@ -988,7 +988,7 @@ if [ "${OPTIONS[surfshark]}" = "1" ]; then
       curl -f https://downloads.surfshark.com/linux/debian-install.sh --output surfshark-install.sh
       sed -i '/^\$SUDO apt-get install -y surfshark$/,$d' surfshark-install.sh
       sh surfshark-install.sh
-      sudo apt-get install surfshark-vpn -y
+      apt-get install surfshark-vpn -y
     } >>./log 2>&1 &
     bash ./helpers/progress.sh $!
     echo

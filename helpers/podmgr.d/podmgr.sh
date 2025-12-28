@@ -122,8 +122,8 @@ do_cleanup() {
   loginctl disable-linger "$user" 2>/dev/null || true
 
   [ -n "$uid_num" ] && {
-    sudo systemctl stop "user@$uid_num.service" 2>/dev/null || true
-    sudo systemctl stop "user-runtime-dir@$uid_num.service" 2>/dev/null || true
+    systemctl stop "user@$uid_num.service" 2>/dev/null || true
+    systemctl stop "user-runtime-dir@$uid_num.service" 2>/dev/null || true
   }
 
   [ -f /etc/subuid ] && sed -i "/^$user:/d" /etc/subuid

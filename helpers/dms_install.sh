@@ -144,7 +144,7 @@ if [ -n "${DMS_EMAIL:-}" ] && [ -n "${DMS_EMAIL_PASSWORD:-}" ]; then
       echo "Debug: Checking container status" >> ./log 2>&1
       sudo -u "$DMS_EXEC_USER" -H bash -c "cd '$DMS_DIR' && source '$DMS_ENV_FILE' && podman ps -a" >> ./log 2>&1
       echo "Debug: Finished checking container status" >> ./log 2>&1
-      sudo journalctl _UID=$(id -u $DMS_EXEC_USER) >> ./log 2>&1
+      journalctl _UID=$(id -u $DMS_EXEC_USER) >> ./log 2>&1
       echo "Debug: End log" >> ./log 2>&1
       echo "Warning: email $DMS_EMAIL failed adding - container may not be running yet. Add manually with: podmgr exec dms, then: setup email add $DMS_EMAIL <password>"
     else
@@ -157,7 +157,7 @@ if [ -n "${DMS_EMAIL:-}" ] && [ -n "${DMS_EMAIL_PASSWORD:-}" ]; then
       echo "Debug: Checking container status" >> ./log 2>&1
       sudo -u "$DMS_EXEC_USER" -H bash -c "cd '$DMS_DIR' && source '$DMS_ENV_FILE' && podman ps -a" >> ./log 2>&1
       echo "Debug: Finished checking container status" >> ./log 2>&1
-      sudo journalctl _UID=$(id -u $DMS_EXEC_USER) >> ./log 2>&1
+      journalctl _UID=$(id -u $DMS_EXEC_USER) >> ./log 2>&1
       echo "Debug: End log" >> ./log 2>&1
       echo "Warning: email $DMS_EMAIL failed adding - container may not be running yet. Add manually with: podman exec -it mailserver setup email add $DMS_EMAIL <password>"
     else
