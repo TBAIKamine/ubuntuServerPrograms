@@ -6,31 +6,48 @@ if [ -z "$SUDO_USER" ] || [ "$SUDO_USER" = "root" ]; then
 	exit 1
 fi
 
-# -- add conditional alias to .bashrc and .profile --
+# -- add conditional alias AND function to .bashrc and .profile --
+# The alias works in interactive shells, the exported function works in scripts
+# IMPORTANT: alias/function calls "sudo broker" so broker runs as root and can exec directly
 {
-	ALIAS_BLOCK=$'if [[ -n "$DEVICE_ACCESS" ]]; then\n    alias sudo=\'/usr/local/bin/sudo-broker.sh\'\nfi'
+	ALIAS_BLOCK=$'if [[ -n "$DEVICE_ACCESS" ]]; then\n    alias sudo=\'/usr/bin/sudo /usr/local/bin/sudo-broker.sh\'\nfi'
+	# Function for non-interactive shells (scripts) - exported so subshells inherit it
+	FUNC_BLOCK=$'# sudo wrapper function for non-interactive shells\nfunction sudo() {\n    if [[ -n "$DEVICE_ACCESS" ]]; then\n        /usr/bin/sudo /usr/local/bin/sudo-broker.sh "$@"\n    else\n        /usr/bin/sudo "$@"\n    fi\n}\nexport -f sudo'
 	
 	for RC_FILE in "/home/$SUDO_USER/.bashrc" "/home/$SUDO_USER/.profile"; do
 		if [ -f "$RC_FILE" ]; then
 			# Remove any existing DEVICE_ACCESS alias blocks (clean slate for reinstalls)
 			sed -i '/if \[\[ -n "\$DEVICE_ACCESS" \]\]; then/,/^fi$/d' "$RC_FILE"
+			# Remove any existing sudo wrapper function blocks
+			sed -i '/# sudo wrapper function for non-interactive shells/,/^export -f sudo$/d' "$RC_FILE"
 			# Remove any standalone broken sudo-broker aliases
 			sed -i '/alias sudo=.*sudo-broker/d' "$RC_FILE"
-			# Add the correct alias block
+			# Add the correct alias block (for interactive shells)
 			echo "$ALIAS_BLOCK" >> "$RC_FILE"
+			# Add the function block (for non-interactive shells/scripts)
+			echo "$FUNC_BLOCK" >> "$RC_FILE"
 		else
 			echo "$ALIAS_BLOCK" > "$RC_FILE"
+			echo "$FUNC_BLOCK" >> "$RC_FILE"
 			chown "$SUDO_USER:$SUDO_USER" "$RC_FILE"
 		fi
 	done
 }
 
-# -- allow the broker command to be executed without password from sudo --
+# -- allow the broker command and passwdls to be executed without password from sudo --
 {
 	SUDOERS_FILE="/etc/sudoers.d/secret_broker"
-	SUDOERS_CONTENT="Defaults env_keep += \"DEVICE_ACCESS\"\nDefaults env_keep += \"BASH_ENV\"\nDefaults env_keep += \"SOURCE_DIR\"\n$SUDO_USER ALL = NOPASSWD: /usr/local/bin/sudo-broker.sh"
-	echo -e "$SUDOERS_CONTENT" | tee "$SUDOERS_FILE" > /dev/null
-	chmod 550 "$SUDOERS_FILE"
+	# env_keep preserves these variables through sudo calls
+	# NOPASSWD allows broker and passwdls to run without password
+	# Note: broker needs "*" to allow any arguments (the actual commands to run)
+	SUDOERS_CONTENT="Defaults env_keep += \"DEVICE_ACCESS\"
+Defaults env_keep += \"BASH_ENV\"
+Defaults env_keep += \"SOURCE_DIR\"
+Defaults env_keep += \"SUDO_USER\"
+$SUDO_USER ALL = NOPASSWD: /usr/local/bin/sudo-broker.sh *
+$SUDO_USER ALL = NOPASSWD: /usr/local/bin/passwdls"
+	echo "$SUDOERS_CONTENT" > "$SUDOERS_FILE"
+	chmod 440 "$SUDOERS_FILE"
 	chown root:root "$SUDOERS_FILE"
 }
 
@@ -38,8 +55,7 @@ fi
 {
 	ABS_PATH=$(dirname "$(realpath "$0")")
 	cp $ABS_PATH/sudo-broker.sh /usr/local/bin/sudo-broker.sh
-	chmod 550 /usr/local/bin/sudo-broker.sh
-	chmod +x /usr/local/bin/sudo-broker.sh
+	chmod 555 /usr/local/bin/sudo-broker.sh
 	chown root:root /usr/local/bin/sudo-broker.sh
 }
 

@@ -1,24 +1,37 @@
 #!/bin/bash
 
+# sudo-broker.sh - Passwordless sudo via DEVICE_ACCESS secret validation
+# This script is called VIA sudo (from the alias) and runs as root.
+# It validates the DEVICE_ACCESS environment variable against a stored hash.
+# If valid, it directly executes the command (already running as root).
+# If invalid, access is denied.
+
 # 1. Path to the stored hash
 HASH_FILE="/etc/sudo_secret.hash"
 
-# 2. Read the expected hash (trim any CR/newline for consistency)
+# 2. Check if hash file exists
+if [ ! -f "$HASH_FILE" ]; then
+  echo "sudo-broker: Hash file not found. System not configured." >&2
+  exit 1
+fi
+
+# 3. Read the expected hash (trim any CR/newline for consistency)
 EXPECTED_HASH=$(tr -d '\r\n' < "$HASH_FILE")
 
-# 3. Read the plain-text secret from the environment variable (DEVICE_ACCESS)
+# 4. Read the plain-text secret from the environment variable (DEVICE_ACCESS)
 PROVIDED_SECRET="${DEVICE_ACCESS}"
 
-# 4. Hash the provided secret (use printf and trim CR/newline for absolute consistency)
+# 5. Hash the provided secret (use printf and trim CR/newline for absolute consistency)
 PROVIDED_HASH=$(printf '%s' "$PROVIDED_SECRET" | tr -d '\r\n' | sha256sum | awk '{print $1}')
 
-# 5. Compare the hashes
+# 6. Compare the hashes
 if [ "$PROVIDED_HASH" == "$EXPECTED_HASH" ] && [ -n "$PROVIDED_SECRET" ]; then
-  # Call sudo with all flags/args preserved
-  exec /usr/bin/sudo "$@"
+  # Already running as root (called via sudo), directly execute the command
+  # This preserves SUDO_USER correctly (set by the initial sudo call)
+  exec "$@"
 else
   # Failure: log the attempt and exit
-  logger "Unauthorized sudo attempt on $USER from $SSH_CONNECTION"
-  echo "sudo access denied (DEVICE_ACCESS mismatch)."
+  logger "Unauthorized sudo attempt by ${SUDO_USER:-$USER} from ${SSH_CONNECTION:-local}"
+  echo "sudo access denied (DEVICE_ACCESS mismatch)." >&2
   exit 1
 fi

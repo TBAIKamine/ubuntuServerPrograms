@@ -96,8 +96,37 @@ if [ -n "${DMS_EMAIL:-}" ] && [ -n "${DMS_EMAIL_PASSWORD:-}" ]; then
     DMS_ENV_FILE=""
   fi
   
-  # Wait a moment for container to be ready
-  sleep 20
+  # Wait for mailserver container to be running (dynamic wait with timeout)
+  MAX_WAIT=300  # 5 minutes max (image pull + container start + service init)
+  WAIT_COUNT=0
+  echo "Waiting for mailserver container to be ready..."
+  while [ $WAIT_COUNT -lt $MAX_WAIT ]; do
+    if [ -n "$DMS_ENV_FILE" ] && [ -f "$DMS_ENV_FILE" ]; then
+      # System user with env file
+      CONTAINER_RUNNING=$(sudo -u "$DMS_EXEC_USER" -H bash -c "source '$DMS_ENV_FILE' && podman ps --filter 'name=mailserver' --filter 'status=running' -q" 2>/dev/null)
+    else
+      # Regular user
+      CONTAINER_RUNNING=$(sudo -u "$DMS_EXEC_USER" -H bash -c "podman ps --filter 'name=mailserver' --filter 'status=running' -q" 2>/dev/null)
+    fi
+    
+    if [ -n "$CONTAINER_RUNNING" ]; then
+      echo "Container is running. Waiting 30s for internal services to initialize..."
+      sleep 30
+      break
+    fi
+    
+    # Show progress every 30 seconds
+    if [ $((WAIT_COUNT % 30)) -eq 0 ] && [ $WAIT_COUNT -gt 0 ]; then
+      echo "Still waiting... ($WAIT_COUNT seconds elapsed)"
+    fi
+    
+    sleep 5
+    WAIT_COUNT=$((WAIT_COUNT + 5))
+  done
+  
+  if [ $WAIT_COUNT -ge $MAX_WAIT ]; then
+    echo "Warning: Timed out waiting for mailserver container after ${MAX_WAIT}s."
+  fi
   
   # Get the target user's home directory
   DMS_USER_HOME=$(getent passwd "$DMS_EXEC_USER" | cut -d: -f6)

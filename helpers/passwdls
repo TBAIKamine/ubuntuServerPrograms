@@ -1,6 +1,7 @@
 #!/bin/bash
 source /usr/local/lib/scripts/getinput.sh
 SUDOERS_FILE="/etc/sudoers.d/secret_broker"
+USER_HOME="/home/__USER__"
 
 # Check if argument is provided
 if [ $# -ne 1 ]; then
@@ -8,32 +9,64 @@ if [ $# -ne 1 ]; then
   exit 1
 fi
 
+# Helper: Add alias and function blocks to shell config files
+add_alias_block() {
+  local ALIAS_BLOCK=$'if [[ -n "$DEVICE_ACCESS" ]]; then\n    alias sudo=\'/usr/bin/sudo /usr/local/bin/sudo-broker.sh\'\nfi'
+  local FUNC_BLOCK=$'# sudo wrapper function for non-interactive shells\nfunction sudo() {\n    if [[ -n "$DEVICE_ACCESS" ]]; then\n        /usr/bin/sudo /usr/local/bin/sudo-broker.sh "$@"\n    else\n        /usr/bin/sudo "$@"\n    fi\n}\nexport -f sudo'
+  
+  for RC_FILE in "$USER_HOME/.bashrc" "$USER_HOME/.profile"; do
+    if [ -f "$RC_FILE" ]; then
+      # Remove any existing DEVICE_ACCESS alias/function blocks
+      sed -i '/if \[\[ -n "\$DEVICE_ACCESS" \]\]; then/,/^fi$/d' "$RC_FILE"
+      sed -i '/# sudo wrapper function for non-interactive shells/,/^export -f sudo$/d' "$RC_FILE"
+      sed -i '/alias sudo=.*sudo-broker/d' "$RC_FILE"
+      # Add alias block for interactive shells
+      echo "$ALIAS_BLOCK" >> "$RC_FILE"
+      # Add function block for non-interactive shells (scripts)
+      echo "$FUNC_BLOCK" >> "$RC_FILE"
+    fi
+  done
+}
+
+# Helper: Remove alias and function blocks from shell config files
+remove_alias_block() {
+  for RC_FILE in "$USER_HOME/.bashrc" "$USER_HOME/.profile"; do
+    if [ -f "$RC_FILE" ]; then
+      # Remove DEVICE_ACCESS alias blocks
+      sed -i '/if \[\[ -n "\$DEVICE_ACCESS" \]\]; then/,/^fi$/d' "$RC_FILE"
+      # Remove sudo wrapper function blocks
+      sed -i '/# sudo wrapper function for non-interactive shells/,/^export -f sudo$/d' "$RC_FILE"
+      # Remove any standalone broker aliases
+      sed -i '/alias sudo=.*sudo-broker/d' "$RC_FILE"
+    fi
+  done
+}
+
 case "$1" in
   on)
     # Enable passwordless sudo
-    if ! grep -q "NOPASSWD" "$SUDOERS_FILE"; then
-      echo "__USER__ ALL = NOPASSWD: /usr/local/bin/sudo-broker.sh" | tee -a "$SUDOERS_FILE" > /dev/null
-      echo "Passwordless sudo enabled"
-    else
-      echo "Passwordless sudo already enabled"
+    if ! grep -q "NOPASSWD.*sudo-broker" "$SUDOERS_FILE" 2>/dev/null; then
+      echo "__USER__ ALL = NOPASSWD: /usr/local/bin/sudo-broker.sh" >> "$SUDOERS_FILE"
     fi
+    # Re-add alias blocks
+    add_alias_block
+    echo "Passwordless sudo enabled"
     ;;
   off)
-    # Disable passwordless sudo
-    if grep -q "NOPASSWD" "$SUDOERS_FILE"; then
-      sed -i.bak "/NOPASSWD/d" "$SUDOERS_FILE"
-      echo "Passwordless sudo disabled"
-    else
-      echo "Passwordless sudo already disabled"
+    # Disable passwordless sudo completely
+    # 1. Remove NOPASSWD line from sudoers
+    if [ -f "$SUDOERS_FILE" ]; then
+      sed -i.bak '/NOPASSWD.*sudo-broker/d' "$SUDOERS_FILE"
     fi
+    # 2. Remove alias/function blocks so sudo goes directly to /usr/bin/sudo
+    remove_alias_block
+    echo "Passwordless sudo disabled. Use your system password for sudo."
     ;;
   update)
-    # Update the stored sudo secret hash. Use getInput to collect a
-    # confirmed, non-empty, dotted input and then store its sha256 hash.
+    # Update the stored sudo secret hash
     echo "Updating sudo secret..." >&2
     # Ask interactively; visibility=dotted, require confirmation, do not allow empty
     NEW_SECRET=$(getInput "Enter new sudo secret" "" 0 "dotted" "true" "true" "false")
-    # If no value returned, abort
     NEW_SECRET="${NEW_SECRET%$'\n'}"
     if [ -z "${NEW_SECRET}" ]; then
       echo "No secret entered. Aborting update." >&2
@@ -44,16 +77,16 @@ case "$1" in
     if [ -f /etc/sudo_secret.hash ]; then
       chmod 700 /etc/sudo_secret.hash || true
     fi
-    # Write new hash (use printf and trim CR/newline for consistency)
-    printf '%s' "${NEW_SECRET}" | tr -d '\r\n' | sha256sum | awk '{print $1}' | tee /etc/sudo_secret.hash > /dev/null
+    # Write new hash
+    printf '%s' "${NEW_SECRET}" | tr -d '\r\n' | sha256sum | awk '{print $1}' > /etc/sudo_secret.hash
     chmod 440 /etc/sudo_secret.hash
-    chown root:root /etc/sudo_secret.hash || true
+    chown root:__USER__ /etc/sudo_secret.hash || true
 
     echo "Sudo secret hash updated." >&2
     ;;
   *)
     echo "Invalid argument: $1"
-    echo "Usage: $0 {on|off}"
+    echo "Usage: $0 {on|off|update}"
     exit 1
     ;;
 esac
