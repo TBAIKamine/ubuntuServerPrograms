@@ -1,6 +1,14 @@
 #!/bin/bash
 DMS_DIR="/opt/compose/docker-mailserver"
 mkdir -p $DMS_DIR
+
+# Determine owner early - needed for chown calls below
+if [ "${DMS_SYS_USER:-false}" = "true" ]; then
+  DMS_OWNER="dms"
+else
+  DMS_OWNER="$SUDO_USER"
+fi
+
 DMS_GITHUB_URL="https://raw.githubusercontent.com/docker-mailserver/docker-mailserver/master"
 wget "${DMS_GITHUB_URL}/compose.yaml" -O $DMS_DIR/compose.yaml
 wget "${DMS_GITHUB_URL}/mailserver.env" -O $DMS_DIR/mailserver.env
@@ -75,11 +83,8 @@ dms_acl_hook() {
 export -f dms_acl_hook
 
 if [ "${DMS_SYS_USER:-false}" = "true" ]; then
-  DMS_OWNER="dms"
   apt install -y acl
   podmgr setup --user dms --compose-dir "$DMS_DIR" --hook dms_acl_hook
-else
-  DMS_OWNER="$SUDO_USER"
 fi
 
 # Add email account if email and password were provided
