@@ -4,7 +4,7 @@
 # Then deploys the Act Runner container to a KVM VM
 
 # Required environment variables:
-# - SUDO_USER: The user to install for
+# - SUDO_USER: The user to install for (auto-set by sudo, falls back to logname)
 # - FQDN: (optional) The main domain for constructing gitea URL
 # - GITEA_USERNAME: (optional) The Gitea admin username
 
@@ -13,13 +13,27 @@ set -e
 ABS_PATH="${ABS_PATH:-$(dirname "$(realpath "$0")")/..}"
 SCRIPT_DIR="$(dirname "$(realpath "$0")")"
 
-if [ -z "${SUDO_USER:-}" ]; then
-  echo "Error: SUDO_USER must be set" >&2
+# Determine target user with fallback chain:
+# 1. SUDO_USER (set by sudo)
+# 2. logname (original login user)
+if [ -n "${SUDO_USER:-}" ] && [ "$SUDO_USER" != "root" ]; then
+  INSTALL_USER="$SUDO_USER"
+elif command -v logname &>/dev/null && logname &>/dev/null; then
+  INSTALL_USER=$(logname)
+else
+  INSTALL_USER=""
+fi
+
+# Ensure we're not installing to root
+if [ "$INSTALL_USER" = "root" ] || [ -z "$INSTALL_USER" ]; then
+  echo "Error: Cannot determine target user. Run with: sudo ./runner_install.sh" >&2
   exit 1
 fi
 
+echo "Installing for user: $INSTALL_USER"
+
 # Get user's home directory and SSH key
-USER_HOME=$(getent passwd "$SUDO_USER" | cut -d: -f6)
+USER_HOME=$(getent passwd "$INSTALL_USER" | cut -d: -f6)
 SSH_KEY_PATH="$USER_HOME/.ssh/id_ed25519"
 
 # Install giteaGetTokens.sh to user's config directory
@@ -37,12 +51,22 @@ fi
 sed -e "s|__GITEA_USERNAME__|${GITEA_USERNAME:-}|g" \
     -e "s|__GITEA_URL__|${GITEA_URL:-}|g" \
     -e "s|__CONFIG_DIR__|$GITEA_CONFIG_DIR|g" \
-    "$ABS_PATH/helpers/giteaGetTokens.sh" > "$GITEA_CONFIG_DIR/giteaGetTokens.sh"
+    "$SCRIPT_DIR/giteaGetTokens.sh" > "$GITEA_CONFIG_DIR/giteaGetTokens.sh"
 
 chmod +x "$GITEA_CONFIG_DIR/giteaGetTokens.sh"
-chown -R "$SUDO_USER:$SUDO_USER" "$GITEA_CONFIG_DIR"
+chown -R "$INSTALL_USER:$INSTALL_USER" "$GITEA_CONFIG_DIR"
 
 echo "Gitea Act Runner token script installed to: $GITEA_CONFIG_DIR/giteaGetTokens.sh"
+
+# Initialize PAT if it doesn't exist (one-time only)
+if [ -f "$GITEA_CONFIG_DIR/.pat" ] && [ -s "$GITEA_CONFIG_DIR/.pat" ]; then
+  echo "PAT already exists, skipping initialization..."
+else
+  echo "Initializing Gitea PAT..."
+  if ! "$GITEA_CONFIG_DIR/giteaGetTokens.sh" --init; then
+    echo "Warning: Failed to initialize PAT. You may need to run 'giteaGetTokens.sh --init' manually later." >&2
+  fi
+fi
 
 # ============================================================
 # Deploy Act Runner to KVM VM
@@ -81,17 +105,23 @@ echo "VM is accessible. Deploying Act Runner..."
 TEMP_DIR=$(mktemp -d)
 trap "rm -rf $TEMP_DIR" EXIT
 
-# Prepare .env file from existing template with expanded variables
-# Read runner token from .runner_token file (JSON response)
-RUNNER_TOKEN=""
-if [ -f "$GITEA_CONFIG_DIR/.runner_token" ]; then
-  # Extract token from JSON response if jq is available, otherwise try basic parsing
-  if command -v jq &>/dev/null; then
-    RUNNER_TOKEN=$(jq -r '.token // empty' "$GITEA_CONFIG_DIR/.runner_token" 2>/dev/null || true)
+# Check if instance runner is already registered
+REGISTRY_FILE="$GITEA_CONFIG_DIR/.runners_registry"
+if grep -qxF "instance" "$REGISTRY_FILE" 2>/dev/null; then
+  echo "Instance runner already registered. Skipping runner deployment."
+  echo "Use 'giteaGetTokens.sh --list' to see all registered runners."
+  echo "VM setup will still proceed without creating a new runner instance."
+  RUNNER_TOKEN=""
+else
+  # Get a fresh runner token for this deployment
+  RUNNER_TOKEN=""
+  if [ -f "$GITEA_CONFIG_DIR/.pat" ] && [ -s "$GITEA_CONFIG_DIR/.pat" ]; then
+    echo "Fetching runner registration token..."
+    RUNNER_TOKEN=$("$GITEA_CONFIG_DIR/giteaGetTokens.sh" --runner-token 2>/dev/null | tail -1)
   fi
+
   if [ -z "$RUNNER_TOKEN" ]; then
-    # Fallback: try to extract token with grep
-    RUNNER_TOKEN=$(grep -oP '"token"\s*:\s*"\K[^"]+' "$GITEA_CONFIG_DIR/.runner_token" 2>/dev/null || true)
+    echo "Warning: Could not get runner token. Run 'giteaGetTokens.sh --init' first, then re-run this script." >&2
   fi
 fi
 
@@ -147,3 +177,13 @@ ssh -i "$SSH_KEY_PATH" -o StrictHostKeyChecking=no "$VM_USER@$VM_IP" "bash ~/set
 
 # Cleanup setup script from VM
 ssh -i "$SSH_KEY_PATH" -o StrictHostKeyChecking=no "$VM_USER@$VM_IP" "rm -f ~/setup_runner.sh"
+
+# Create the main runner instance if we have a token
+if [ -n "$RUNNER_TOKEN" ]; then
+  echo "Creating main runner instance..."
+  ssh -i "$SSH_KEY_PATH" -o StrictHostKeyChecking=no "$VM_USER@$VM_IP" \
+    "~/runnermgr.sh --type repo --token '$RUNNER_TOKEN' --name instance"
+  echo "Runner instance created at ~/runners/repo_instance"
+else
+  echo "Warning: No runner token found. Run giteaGetTokens.sh first, then use runnermgr.sh to create a runner instance."
+fi

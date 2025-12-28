@@ -1,10 +1,81 @@
 #!/bin/bash
+# Gitea Token Manager
+# Usage: 
+#   ./giteaGetTokens.sh --init                              # First-time PAT generation (one-time only)
+#   ./giteaGetTokens.sh --runner-token                      # Get instance runner token (only 1 ever)
+#   ./giteaGetTokens.sh --runner-token --org <name>         # Get org-level runner token (1 per org)
+#   ./giteaGetTokens.sh --runner-token --repo <owner/repo>  # Get repo-level runner token (1 per repo)
+#   ./giteaGetTokens.sh --list                              # List all registered runners
+#
+# Each runner token can only be obtained ONCE. The registry tracks created runners.
 
 set -e
 
 GITEA_USERNAME="__GITEA_USERNAME__"
 GITEA_URL="__GITEA_URL__"
 CONFIG_DIR="__CONFIG_DIR__"
+REGISTRY_FILE="$CONFIG_DIR/.runners_registry"
+
+# Parse arguments
+ACTION=""
+SCOPE_TYPE=""
+SCOPE_VALUE=""
+FORCE=false
+
+while [ $# -gt 0 ]; do
+  case "$1" in
+    --init)
+      ACTION="init"
+      shift
+      ;;
+    --runner-token)
+      ACTION="runner-token"
+      shift
+      ;;
+    --org)
+      SCOPE_TYPE="org"
+      SCOPE_VALUE="$2"
+      shift 2
+      ;;
+    --repo)
+      SCOPE_TYPE="repo"
+      SCOPE_VALUE="$2"
+      shift 2
+      ;;
+    --list)
+      ACTION="list"
+      shift
+      ;;
+    --force)
+      FORCE=true
+      shift
+      ;;
+    -h|--help)
+      cat <<EOF
+Usage:
+  $(basename "$0") --init                              # First-time PAT generation
+  $(basename "$0") --runner-token                      # Get instance runner token (only 1 ever)
+  $(basename "$0") --runner-token --org <name>         # Get org-level runner token (1 per org)
+  $(basename "$0") --runner-token --repo <owner/repo>  # Get repo-level runner token (1 per repo)
+  $(basename "$0") --list                              # List all registered runners
+  $(basename "$0") --runner-token [--org|--repo] --force  # Force new token (use with caution!)
+
+Note: Each runner token can only be obtained ONCE per scope. 
+      The registry at $REGISTRY_FILE tracks created runners.
+EOF
+      exit 0
+      ;;
+    *)
+      echo "Error: Unknown option: $1" >&2
+      exit 1
+      ;;
+  esac
+done
+
+if [ -z "$ACTION" ]; then
+  echo "Error: No action specified. Use --init, --runner-token, or --list" >&2
+  exit 1
+fi
 
 if [ -z "$GITEA_USERNAME" ] || [ "$GITEA_USERNAME" = "__GITEA_USERNAME__" ]; then
   echo "Error: GITEA_USERNAME not configured. Please edit this script or re-run installation."
@@ -16,40 +87,161 @@ if [ -z "$GITEA_URL" ] || [ "$GITEA_URL" = "__GITEA_URL__" ]; then
   exit 1
 fi
 
-# Step 1: Generate PAT using podmgr exec from the compose directory
-echo "Generating Personal Access Token for user: $GITEA_USERNAME"
-cd /opt/compose/gitea
+# Initialize registry file if it doesn't exist
+touch "$REGISTRY_FILE" 2>/dev/null || true
 
-PAT=$(podmgr exec gitea gitea admin user generate-access-token \
-  --username "$GITEA_USERNAME" \
-  --token-name "automation-token" \
-  --scopes all \
-  --raw 2>/dev/null || true)
+# Helper: Get runner registry key based on scope
+get_registry_key() {
+  if [ -z "$SCOPE_TYPE" ]; then
+    echo "instance"
+  elif [ "$SCOPE_TYPE" = "org" ]; then
+    echo "org:$SCOPE_VALUE"
+  elif [ "$SCOPE_TYPE" = "repo" ]; then
+    echo "repo:$SCOPE_VALUE"
+  fi
+}
 
-if [ -z "$PAT" ]; then
-  echo "Error: Failed to generate PAT. Make sure Gitea is running and the user exists."
-  exit 1
+# Helper: Check if runner is already registered
+is_registered() {
+  local key="$1"
+  grep -qxF "$key" "$REGISTRY_FILE" 2>/dev/null
+}
+
+# Helper: Register a runner
+register_runner() {
+  local key="$1"
+  echo "$key" >> "$REGISTRY_FILE"
+}
+
+# ============================================================
+# --list: Show all registered runners
+# ============================================================
+if [ "$ACTION" = "list" ]; then
+  if [ ! -s "$REGISTRY_FILE" ]; then
+    echo "No runners registered yet."
+    exit 0
+  fi
+  echo "Registered runners:"
+  echo "-------------------"
+  while IFS= read -r line; do
+    case "$line" in
+      instance)
+        echo "  [instance] Global instance runner"
+        ;;
+      org:*)
+        echo "  [org]      ${line#org:}"
+        ;;
+      repo:*)
+        echo "  [repo]     ${line#repo:}"
+        ;;
+      *)
+        echo "  [?]        $line"
+        ;;
+    esac
+  done < "$REGISTRY_FILE"
+  exit 0
 fi
 
-# Save PAT securely
-echo "$PAT" > "$CONFIG_DIR/.pat"
-chmod 600 "$CONFIG_DIR/.pat"
-echo "PAT saved to $CONFIG_DIR/.pat"
+# ============================================================
+# --init: Generate PAT (one-time only)
+# ============================================================
+if [ "$ACTION" = "init" ]; then
+  if [ -f "$CONFIG_DIR/.pat" ] && [ -s "$CONFIG_DIR/.pat" ]; then
+    echo "PAT already exists at $CONFIG_DIR/.pat"
+    echo "This token can only be generated once. Delete the file if you need to regenerate."
+    exit 0
+  fi
 
-# Step 2: Get runner registration token using the PAT
-echo "Fetching runner registration token..."
-RUNNER_TOKEN_RESPONSE=$(curl -s -X GET "https://$GITEA_URL/api/v1/admin/runners/registration-token" \
-     -H "Authorization: token $PAT" \
-     -H "accept: application/json")
+  echo "Generating Personal Access Token for user: $GITEA_USERNAME"
+  cd /opt/compose/gitea
 
-if [ -z "$RUNNER_TOKEN_RESPONSE" ]; then
-  echo "Error: Failed to fetch runner registration token."
-  exit 1
+  PAT=$(podmgr exec gitea gitea admin user generate-access-token \
+    --username "$GITEA_USERNAME" \
+    --token-name "automation-token" \
+    --scopes all \
+    --raw 2>/dev/null || true)
+
+  if [ -z "$PAT" ]; then
+    echo "Error: Failed to generate PAT. Make sure Gitea is running and the user exists."
+    exit 1
+  fi
+
+  # Save PAT securely
+  echo "$PAT" > "$CONFIG_DIR/.pat"
+  chmod 600 "$CONFIG_DIR/.pat"
+  echo "PAT saved to $CONFIG_DIR/.pat"
+  exit 0
 fi
 
-# Save runner token response
-echo "$RUNNER_TOKEN_RESPONSE" > "$CONFIG_DIR/.runner_token"
-chmod 600 "$CONFIG_DIR/.runner_token"
-echo "Runner token saved to $CONFIG_DIR/.runner_token"
+# ============================================================
+# --runner-token: Get runner registration token
+# ============================================================
+if [ "$ACTION" = "runner-token" ]; then
+  # Check PAT exists
+  if [ ! -f "$CONFIG_DIR/.pat" ] || [ ! -s "$CONFIG_DIR/.pat" ]; then
+    echo "Error: PAT not found. Run --init first." >&2
+    exit 1
+  fi
 
-echo "Done! Tokens have been saved to $CONFIG_DIR/"
+  # Check if this runner is already registered
+  REGISTRY_KEY=$(get_registry_key)
+  
+  if is_registered "$REGISTRY_KEY" && [ "$FORCE" != true ]; then
+    echo "Error: Runner '$REGISTRY_KEY' is already registered." >&2
+    echo "Each runner token can only be obtained once." >&2
+    echo "Use --list to see all registered runners." >&2
+    echo "Use --force to override (use with caution - old runner will be orphaned)." >&2
+    exit 1
+  fi
+
+  PAT=$(cat "$CONFIG_DIR/.pat")
+
+  # Determine API endpoint based on scope
+  if [ -z "$SCOPE_TYPE" ]; then
+    # Global/instance level runner token
+    API_URL="https://$GITEA_URL/api/v1/admin/runners/registration-token"
+    echo "Fetching instance runner registration token..." >&2
+  elif [ "$SCOPE_TYPE" = "org" ]; then
+    # Organization level runner token
+    API_URL="https://$GITEA_URL/api/v1/orgs/$SCOPE_VALUE/actions/runners/registration-token"
+    echo "Fetching runner registration token for org: $SCOPE_VALUE" >&2
+  elif [ "$SCOPE_TYPE" = "repo" ]; then
+    # Repository level runner token
+    API_URL="https://$GITEA_URL/api/v1/repos/$SCOPE_VALUE/actions/runners/registration-token"
+    echo "Fetching runner registration token for repo: $SCOPE_VALUE" >&2
+  fi
+
+  RUNNER_TOKEN_RESPONSE=$(curl -s -X GET "$API_URL" \
+       -H "Authorization: token $PAT" \
+       -H "accept: application/json")
+
+  if [ -z "$RUNNER_TOKEN_RESPONSE" ]; then
+    echo "Error: Failed to fetch runner registration token." >&2
+    exit 1
+  fi
+
+  # Check for error in response
+  if echo "$RUNNER_TOKEN_RESPONSE" | grep -q '"message"'; then
+    echo "Error from Gitea API: $RUNNER_TOKEN_RESPONSE" >&2
+    exit 1
+  fi
+
+  # Extract token
+  if command -v jq &>/dev/null; then
+    TOKEN=$(echo "$RUNNER_TOKEN_RESPONSE" | jq -r '.token // empty')
+  else
+    TOKEN=$(echo "$RUNNER_TOKEN_RESPONSE" | grep -oP '"token"\s*:\s*"\K[^"]+' || true)
+  fi
+
+  if [ -z "$TOKEN" ]; then
+    echo "Error: Could not extract token from response: $RUNNER_TOKEN_RESPONSE" >&2
+    exit 1
+  fi
+
+  # Register this runner (token is one-time use)
+  register_runner "$REGISTRY_KEY"
+  echo "Runner '$REGISTRY_KEY' registered." >&2
+
+  # Output token to stdout (for capture by caller)
+  echo "$TOKEN"
+fi
