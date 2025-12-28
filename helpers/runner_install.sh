@@ -95,15 +95,15 @@ if [ -f "$GITEA_CONFIG_DIR/.runner_token" ]; then
   fi
 fi
 
-# Use existing .env template and hardcode GITEA_INSTANCE_URL (token and runner name will be set by runner_manager.sh)
+# Use existing .env template and hardcode GITEA_INSTANCE_URL (token and runner name will be set by runnermgr.sh)
 sed -e "s|GITEA_INSTANCE_URL=.*|GITEA_INSTANCE_URL=https://$GITEA_URL|" \
     "$SCRIPT_DIR/.env" > "$TEMP_DIR/.env"
 
-# Copy compose file as-is (container_name will be set by runner_manager.sh)
+# Copy compose file as-is (container_name will be set by runnermgr.sh)
 cp "$SCRIPT_DIR/act_runner-compose.yaml" "$TEMP_DIR/compose.yaml"
 
-# Copy runner_manager.sh
-cp "$SCRIPT_DIR/runner_manager.sh" "$TEMP_DIR/runner_manager.sh"
+# Copy runnermgr.sh
+cp "$SCRIPT_DIR/runnermgr.sh" "$TEMP_DIR/runnermgr.sh"
 
 # Create setup script to run on the VM
 cat > "$TEMP_DIR/setup_runner.sh" <<'SCRIPT_EOF'

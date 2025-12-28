@@ -1,7 +1,7 @@
 #!/bin/bash
 # Runner Manager Script
 # Creates and manages Gitea Act Runner instances
-# Usage: ./runner_manager.sh [--type repo|org] --token <token> --name <name>
+# Usage: ./runnermgr.sh [--type repo|org] --token <token> --name <name>
 
 set -e
 
