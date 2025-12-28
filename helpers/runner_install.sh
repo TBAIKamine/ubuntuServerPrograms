@@ -95,14 +95,15 @@ if [ -f "$GITEA_CONFIG_DIR/.runner_token" ]; then
   fi
 fi
 
-# Use existing .env template and substitute values
+# Use existing .env template and hardcode GITEA_INSTANCE_URL (token and runner name will be set by runner_manager.sh)
 sed -e "s|GITEA_INSTANCE_URL=.*|GITEA_INSTANCE_URL=https://$GITEA_URL|" \
-    -e "s|GITEA_RUNNER_REGISTRATION_TOKEN=.*|GITEA_RUNNER_REGISTRATION_TOKEN=$RUNNER_TOKEN|" \
     "$SCRIPT_DIR/.env" > "$TEMP_DIR/.env"
 
-# Prepare compose file with expanded URL
-sed "s|http://gitea.example.com|https://$GITEA_URL|g" \
-    "$SCRIPT_DIR/act_runner-compose.yaml" > "$TEMP_DIR/compose.yaml"
+# Copy compose file as-is (container_name will be set by runner_manager.sh)
+cp "$SCRIPT_DIR/act_runner-compose.yaml" "$TEMP_DIR/compose.yaml"
+
+# Copy runner_manager.sh
+cp "$SCRIPT_DIR/runner_manager.sh" "$TEMP_DIR/runner_manager.sh"
 
 # Create setup script to run on the VM
 cat > "$TEMP_DIR/setup_runner.sh" <<'SCRIPT_EOF'
@@ -119,34 +120,30 @@ sudo apt install -y docker.io docker-compose-v2
 echo "Adding user to docker group..."
 sudo usermod -aG docker $USER
 
-echo "Starting Act Runner container..."
-cd ~/act-runner
-
 # Allow unprivileged user namespaces for rootless containers
+echo "Configuring kernel for rootless containers..."
 sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
 echo "kernel.apparmor_restrict_unprivileged_userns=0" | sudo tee /etc/sysctl.d/99-rootless.conf
 
-sudo docker compose up -d
-
-echo "Act Runner deployment complete!"
+echo "VM setup complete!"
 SCRIPT_EOF
 
 chmod +x "$TEMP_DIR/setup_runner.sh"
 
 # Copy files to VM
 echo "Copying files to VM..."
-ssh -i "$SSH_KEY_PATH" -o StrictHostKeyChecking=no "$VM_USER@$VM_IP" "mkdir -p ~/act-runner"
-scp -i "$SSH_KEY_PATH" -o StrictHostKeyChecking=no "$TEMP_DIR/.env" "$VM_USER@$VM_IP:~/act-runner/.env"
-scp -i "$SSH_KEY_PATH" -o StrictHostKeyChecking=no "$TEMP_DIR/compose.yaml" "$VM_USER@$VM_IP:~/act-runner/compose.yaml"
+ssh -i "$SSH_KEY_PATH" -o StrictHostKeyChecking=no "$VM_USER@$VM_IP" "mkdir -p ~/runners ~/dependencies"
+scp -i "$SSH_KEY_PATH" -o StrictHostKeyChecking=no "$TEMP_DIR/.env" "$VM_USER@$VM_IP:~/dependencies/.env"
+scp -i "$SSH_KEY_PATH" -o StrictHostKeyChecking=no "$TEMP_DIR/compose.yaml" "$VM_USER@$VM_IP:~/dependencies/compose.yaml"
+scp -i "$SSH_KEY_PATH" -o StrictHostKeyChecking=no "$TEMP_DIR/runnermgr.sh" "$VM_USER@$VM_IP:~/runnermgr.sh"
 scp -i "$SSH_KEY_PATH" -o StrictHostKeyChecking=no "$TEMP_DIR/setup_runner.sh" "$VM_USER@$VM_IP:~/setup_runner.sh"
+
+# Make runnermgr.sh executable
+ssh -i "$SSH_KEY_PATH" -o StrictHostKeyChecking=no "$VM_USER@$VM_IP" "chmod +x ~/runnermgr.sh"
 
 # Execute setup script on VM
 echo "Running setup script on VM (this may take a few minutes)..."
 ssh -i "$SSH_KEY_PATH" -o StrictHostKeyChecking=no "$VM_USER@$VM_IP" "bash ~/setup_runner.sh"
 
-echo ""
-echo "============================================================"
-echo "Gitea Act Runner deployment complete!"
-echo "VM: $VM_NAME ($VM_IP)"
-echo "Runner files: ~/act-runner/"
-echo "============================================================"
+# Cleanup setup script from VM
+ssh -i "$SSH_KEY_PATH" -o StrictHostKeyChecking=no "$VM_USER@$VM_IP" "rm -f ~/setup_runner.sh"
