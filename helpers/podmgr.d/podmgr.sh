@@ -54,9 +54,10 @@ do_setup() {
   mkdir -p "$home_dir/.config/systemd/user" "$home_dir/.config/environment.d" "$home_dir/.local/share"
 
   local env_file="$home_dir/.config/environment.d/podman.conf"
+  # Note: systemd environment.d files use KEY=VALUE format, NOT 'export KEY=VALUE'
   cat > "$env_file" <<EOF
-export XDG_RUNTIME_DIR="/run/user/$uid_num"
-export DOCKER_HOST="unix:///run/user/$uid_num/podman/podman.sock"
+XDG_RUNTIME_DIR=/run/user/$uid_num
+DOCKER_HOST=unix:///run/user/$uid_num/podman/podman.sock
 EOF
   chown -R "$user:$user" "$home_dir"
 

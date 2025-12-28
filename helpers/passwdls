@@ -45,8 +45,11 @@ remove_alias_block() {
 case "$1" in
   on)
     # Enable passwordless sudo
-    if ! grep -q "NOPASSWD.*sudo-broker" "$SUDOERS_FILE" 2>/dev/null; then
-      echo "__USER__ ALL = NOPASSWD: /usr/local/bin/sudo-broker.sh" >> "$SUDOERS_FILE"
+    # Note: Need wildcard (*) to allow any arguments to be passed through broker
+    if ! grep -q "NOPASSWD.*sudo-broker.*\*" "$SUDOERS_FILE" 2>/dev/null; then
+      # Remove any old entries without wildcard first
+      sed -i '/NOPASSWD.*sudo-broker/d' "$SUDOERS_FILE" 2>/dev/null || true
+      echo "__USER__ ALL = NOPASSWD: /usr/local/bin/sudo-broker.sh *" >> "$SUDOERS_FILE"
     fi
     # Re-add alias blocks
     add_alias_block
