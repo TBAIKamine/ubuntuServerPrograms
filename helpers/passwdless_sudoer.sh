@@ -1,13 +1,23 @@
 #!/bin/bash
+
+# Validate SUDO_USER is not root
+if [ -z "$SUDO_USER" ] || [ "$SUDO_USER" = "root" ]; then
+	echo "Error: SUDO_USER must be set to a non-root user" >&2
+	exit 1
+fi
+
 # -- add conditional alias to .bashrc and .profile --
 {
 	ALIAS_BLOCK=$'if [[ -n "$DEVICE_ACCESS" ]]; then\n    alias sudo=\'/usr/local/bin/sudo-broker.sh\'\nfi'
 	
 	for RC_FILE in "/home/$SUDO_USER/.bashrc" "/home/$SUDO_USER/.profile"; do
 		if [ -f "$RC_FILE" ]; then
-			if ! grep -Fxq "alias sudo='/usr/local/bin/sudo-broker.sh'" "$RC_FILE"; then
-				echo "$ALIAS_BLOCK" >> "$RC_FILE"
-			fi
+			# Remove any existing DEVICE_ACCESS alias blocks (clean slate for reinstalls)
+			sed -i '/if \[\[ -n "\$DEVICE_ACCESS" \]\]; then/,/^fi$/d' "$RC_FILE"
+			# Remove any standalone broken sudo-broker aliases
+			sed -i '/alias sudo=.*sudo-broker/d' "$RC_FILE"
+			# Add the correct alias block
+			echo "$ALIAS_BLOCK" >> "$RC_FILE"
 		else
 			echo "$ALIAS_BLOCK" > "$RC_FILE"
 			chown "$SUDO_USER:$SUDO_USER" "$RC_FILE"
