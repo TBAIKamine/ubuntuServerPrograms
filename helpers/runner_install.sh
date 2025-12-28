@@ -56,7 +56,11 @@ sed -e "s|__GITEA_USERNAME__|${GITEA_USERNAME:-}|g" \
 chmod +x "$GITEA_CONFIG_DIR/giteaGetTokens.sh"
 chown -R "$INSTALL_USER:$INSTALL_USER" "$GITEA_CONFIG_DIR"
 
+# Create symlink in /usr/local/bin for easy access
+ln -sf "$GITEA_CONFIG_DIR/giteaGetTokens.sh" /usr/local/bin/giteaGetToken
+
 echo "Gitea Act Runner token script installed to: $GITEA_CONFIG_DIR/giteaGetTokens.sh"
+echo "Symlink created: /usr/local/bin/giteaGetToken"
 
 # Initialize PAT if it doesn't exist (one-time only)
 if [ -f "$GITEA_CONFIG_DIR/.pat" ] && [ -s "$GITEA_CONFIG_DIR/.pat" ]; then
