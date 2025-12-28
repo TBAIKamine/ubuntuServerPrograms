@@ -60,6 +60,15 @@ uninstall_vm() {
     # Get storage paths before undefining
     VM_DIR="/var/lib/libvirt/images/$vm_name"
     
+    # Remove SSH known_hosts entry for this VM's IP (to prevent host key conflicts on reinstall)
+    if [ -f "$VM_DIR/network-config.yaml" ]; then
+        local vm_ip=$(grep -oP '(?<=- )\d+\.\d+\.\d+\.\d+(?=/24)' "$VM_DIR/network-config.yaml" 2>/dev/null | head -1)
+        if [ -n "$vm_ip" ]; then
+            echo "  Removing SSH known_hosts entry for $vm_ip..."
+            ssh-keygen -R "$vm_ip" -f /root/.ssh/known_hosts 2>/dev/null || true
+        fi
+    fi
+    
     # Undefine VM and remove storage
     echo "  Removing VM definition and storage..."
     virsh undefine "$vm_name" --remove-all-storage 2>/dev/null || virsh undefine "$vm_name" 2>/dev/null || true
