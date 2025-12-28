@@ -104,9 +104,9 @@ fi
 # Check container status right after start attempt
 echo "=== Checking container status after start ==="
 if [ "${DMS_SYS_USER:-false}" = "true" ]; then
-  sudo -u dms -H bash -c "source /var/lib/dms/.config/environment.d/podman.conf 2>/dev/null; podman ps -a" 2>&1 || echo "Failed to check container status for dms user"
+  sudo -u dms -H bash -c "cd '$DMS_DIR' && source /var/lib/dms/.config/environment.d/podman.conf 2>/dev/null; podman ps -a" 2>&1 || echo "Failed to check container status for dms user"
 else
-  sudo -u "$SUDO_USER" -H bash -c "podman ps -a" 2>&1 || echo "Failed to check container status for $SUDO_USER"
+  sudo -u "$SUDO_USER" -H bash -c "cd '$DMS_DIR' && podman ps -a" 2>&1 || echo "Failed to check container status for $SUDO_USER"
 fi
 echo "=== End container status check ==="
 
@@ -131,10 +131,10 @@ if [ -n "${DMS_EMAIL:-}" ] && [ -n "${DMS_EMAIL_PASSWORD:-}" ]; then
   while [ $WAIT_COUNT -lt $MAX_WAIT ]; do
     if [ -n "$DMS_ENV_FILE" ] && [ -f "$DMS_ENV_FILE" ]; then
       # System user with env file
-      CONTAINER_RUNNING=$(sudo -u "$DMS_EXEC_USER" -H bash -c "source '$DMS_ENV_FILE' && podman ps --filter 'name=mailserver' --filter 'status=running' -q" 2>/dev/null)
+      CONTAINER_RUNNING=$(sudo -u "$DMS_EXEC_USER" -H bash -c "cd '$DMS_DIR' && source '$DMS_ENV_FILE' && podman ps --filter 'name=mailserver' --filter 'status=running' -q" 2>/dev/null)
     else
       # Regular user
-      CONTAINER_RUNNING=$(sudo -u "$DMS_EXEC_USER" -H bash -c "podman ps --filter 'name=mailserver' --filter 'status=running' -q" 2>/dev/null)
+      CONTAINER_RUNNING=$(sudo -u "$DMS_EXEC_USER" -H bash -c "cd '$DMS_DIR' && podman ps --filter 'name=mailserver' --filter 'status=running' -q" 2>/dev/null)
     fi
     
     if [ -n "$CONTAINER_RUNNING" ]; then
