@@ -9,8 +9,7 @@ loginctl enable-linger $SUDO_USER
 systemctl --user -M $SUDO_USER@ enable --now podman.socket
 systemctl --user -M $SUDO_USER@ start --now podman.socket
 mkdir -p /home/$SUDO_USER/.config/containers/
-touch /home/$SUDO_USER/.config/containers/containers.conf
-tee -a /home/$SUDO_USER/.config/containers/containers.conf <<EOF
+tee /home/$SUDO_USER/.config/containers/containers.conf <<EOF
 [containers]
 # Maximum size of log files (in bytes)
 # Negative numbers indicate no size limit (-1 is the default).

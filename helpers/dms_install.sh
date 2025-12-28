@@ -2,7 +2,7 @@
 DMS_DIR="/opt/compose/docker-mailserver"
 mkdir -p $DMS_DIR
 
-# Determine owner early - needed for chown calls below
+# Determine owner name (user created later by podmgr if sys user)
 if [ "${DMS_SYS_USER:-false}" = "true" ]; then
   DMS_OWNER="dms"
 else
@@ -61,12 +61,10 @@ sed -i '/^  mailserver:/,/^  [A-Za-z0-9_-]\+:/ { /^[[:space:]]*volumes:[[:space:
 mkdir -p $DMS_DIR/docker-data/dms/{mail-data,mail-state,mail-logs,config}
 
 ABS_PATH=$(dirname "$(realpath "$0")")
-chown -R "$DMS_OWNER:$DMS_OWNER" $DMS_DIR
 
 cp $ABS_PATH/postfix-main.cf $DMS_DIR/docker-data/dms/config/postfix-main.cf
 cp $ABS_PATH/user-patches.sh $DMS_DIR/docker-data/dms/config/user-patches.sh
 
-chown -R "$DMS_OWNER:$DMS_OWNER" $DMS_DIR/docker-data/dms/config/{postfix-main.cf,user-patches.sh}
 chmod -R 555 $DMS_DIR/docker-data/dms/config/{postfix-main.cf,user-patches.sh}
 
 dms_acl_hook() {
@@ -91,11 +89,14 @@ echo "SUDO_USER: ${SUDO_USER:-not set}"
 if [ "${DMS_SYS_USER:-false}" = "true" ]; then
   echo "Starting container as system user 'dms' via podmgr..."
   apt install -y acl
+  # podmgr setup creates the user, chowns compose-dir, and starts container service
   echo "Running: podmgr setup --user dms --compose-dir $DMS_DIR --hook dms_acl_hook"
   podmgr setup --user dms --compose-dir "$DMS_DIR" --hook dms_acl_hook 2>&1
   echo "podmgr exit code: $?"
 else
   echo "Starting container as user '$SUDO_USER' via podman-compose..."
+  # For non-sys user, chown now (user already exists)
+  chown -R "$DMS_OWNER:$DMS_OWNER" $DMS_DIR
   echo "Running: cd '$DMS_DIR' && podman-compose up -d"
   sudo -u "$SUDO_USER" -H bash -c "cd '$DMS_DIR' && podman-compose up -d" 2>&1
   echo "podman-compose exit code: $?"
