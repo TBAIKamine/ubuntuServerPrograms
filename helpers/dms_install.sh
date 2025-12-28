@@ -82,10 +82,33 @@ dms_acl_hook() {
 
 export -f dms_acl_hook
 
+echo "=== DMS Container Setup ==="
+echo "DMS_SYS_USER: ${DMS_SYS_USER:-false}"
+echo "DMS_OWNER: $DMS_OWNER"
+echo "DMS_DIR: $DMS_DIR"
+echo "SUDO_USER: ${SUDO_USER:-not set}"
+
 if [ "${DMS_SYS_USER:-false}" = "true" ]; then
+  echo "Starting container as system user 'dms' via podmgr..."
   apt install -y acl
-  podmgr setup --user dms --compose-dir "$DMS_DIR" --hook dms_acl_hook
+  echo "Running: podmgr setup --user dms --compose-dir $DMS_DIR --hook dms_acl_hook"
+  podmgr setup --user dms --compose-dir "$DMS_DIR" --hook dms_acl_hook 2>&1
+  echo "podmgr exit code: $?"
+else
+  echo "Starting container as user '$SUDO_USER' via podman-compose..."
+  echo "Running: cd '$DMS_DIR' && podman-compose up -d"
+  sudo -u "$SUDO_USER" -H bash -c "cd '$DMS_DIR' && podman-compose up -d" 2>&1
+  echo "podman-compose exit code: $?"
 fi
+
+# Check container status right after start attempt
+echo "=== Checking container status after start ==="
+if [ "${DMS_SYS_USER:-false}" = "true" ]; then
+  sudo -u dms -H bash -c "source /var/lib/dms/.config/environment.d/podman.conf 2>/dev/null; podman ps -a" 2>&1 || echo "Failed to check container status for dms user"
+else
+  sudo -u "$SUDO_USER" -H bash -c "podman ps -a" 2>&1 || echo "Failed to check container status for $SUDO_USER"
+fi
+echo "=== End container status check ==="
 
 # Add email account if email and password were provided
 if [ -n "${DMS_EMAIL:-}" ] && [ -n "${DMS_EMAIL_PASSWORD:-}" ]; then
