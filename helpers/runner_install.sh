@@ -81,7 +81,7 @@ echo "VM is accessible. Deploying Act Runner..."
 TEMP_DIR=$(mktemp -d)
 trap "rm -rf $TEMP_DIR" EXIT
 
-# Prepare .env file with expanded variables
+# Prepare .env file from existing template with expanded variables
 # Read runner token from .runner_token file (JSON response)
 RUNNER_TOKEN=""
 if [ -f "$GITEA_CONFIG_DIR/.runner_token" ]; then
@@ -95,11 +95,10 @@ if [ -f "$GITEA_CONFIG_DIR/.runner_token" ]; then
   fi
 fi
 
-cat > "$TEMP_DIR/.env" <<EOF
-GITEA_INSTANCE_URL=https://$GITEA_URL
-GITEA_RUNNER_REGISTRATION_TOKEN=$RUNNER_TOKEN
-GITEA_RUNNER_NAME=act-runner-1
-EOF
+# Use existing .env template and substitute values
+sed -e "s|GITEA_INSTANCE_URL=.*|GITEA_INSTANCE_URL=https://$GITEA_URL|" \
+    -e "s|GITEA_RUNNER_REGISTRATION_TOKEN=.*|GITEA_RUNNER_REGISTRATION_TOKEN=$RUNNER_TOKEN|" \
+    "$SCRIPT_DIR/.env" > "$TEMP_DIR/.env"
 
 # Prepare compose file with expanded URL
 sed "s|http://gitea.example.com|https://$GITEA_URL|g" \
@@ -122,6 +121,11 @@ sudo usermod -aG docker $USER
 
 echo "Starting Act Runner container..."
 cd ~/act-runner
+
+# Allow unprivileged user namespaces for rootless containers
+sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
+echo "kernel.apparmor_restrict_unprivileged_userns=0" | sudo tee /etc/sysctl.d/99-rootless.conf
+
 sudo docker compose up -d
 
 echo "Act Runner deployment complete!"

@@ -3,6 +3,8 @@ services:
     container_name: act_runner
     env_file:
       - .env
+    restart: unless-stopped
+    privileged: true
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
     image: gitea/act_runner:latest-dind-rootless
