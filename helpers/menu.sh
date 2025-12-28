@@ -19,7 +19,8 @@ declare -A OPTIONS=(
     ["lazydocker"]="1"
     ["portainer"]="0"
     ["gitea"]="1"
-    ["gitea_runner"]="0"
+    ["kvm"]="1"
+    ["gitea_runner"]="1"
     ["docker_mailserver"]="1"
     ["n8n"]="1"
     ["selenium"]="0"
@@ -37,7 +38,7 @@ declare -A DEPENDENCIES=(
     ["lazydocker"]="podman"
     ["portainer"]="podman"
     ["gitea"]="podman"
-    ["gitea_runner"]="podman"
+    ["gitea_runner"]="podman kvm"
     ["docker_mailserver"]="podman"
     ["n8n"]="podman"
     ["selenium"]="podman"
@@ -60,6 +61,7 @@ declare -A DESCRIPTIONS=(
     ["lazydocker"]="LazyDocker container management UI"
     ["portainer"]="Portainer container management"
     ["gitea"]="Gitea Git service"
+    ["kvm"]="KVM/QEMU virtualization with virt-install-ubuntu"
     ["gitea_runner"]="Gitea Act Runner (dual user setup)"
     ["docker_mailserver"]="Docker Mailserver"
     ["n8n"]="n8n workflow automation"
@@ -84,6 +86,7 @@ OPTION_KEYS=(
     "lazydocker"
     "portainer"
     "gitea"
+    "kvm"
     "gitea_runner"
     "docker_mailserver"
     "n8n"
@@ -551,8 +554,41 @@ cleanup() {
 
 trap cleanup EXIT INT TERM
 
+# Load options from preseed if in unattended mode
+load_preseed_options() {
+    for key in "${OPTION_KEYS[@]}"; do
+        local preseed_var="PRESEED_OPT_${key}"
+        if [ -n "${!preseed_var:-}" ]; then
+            OPTIONS["$key"]="${!preseed_var}"
+        fi
+    done
+}
+
 # Main function
 main() {
+    # Check for unattended mode - skip interactive menu entirely
+    if [ "${SETUP_UNATTENDED:-false}" = true ]; then
+        echo "Unattended mode: loading options from preseed..."
+        load_preseed_options
+        update_dependencies
+        
+        echo -e "\nProceeding with preseed options...\n"
+        echo "Selected options:"
+        for key in "${OPTION_KEYS[@]}"; do
+            if [ "${OPTIONS[$key]}" = "1" ]; then
+                echo "  ✓ ${DESCRIPTIONS[$key]}"
+            fi
+        done
+        echo ""
+        
+        # Export OPTIONS array for parent script to use
+        for key in "${!OPTIONS[@]}"; do
+            declare -g "OPTION_${key}=${OPTIONS[$key]}"
+            export "OPTION_${key}"
+        done
+        return
+    fi
+    
     detect_capabilities
     setup_colors
     update_dependencies

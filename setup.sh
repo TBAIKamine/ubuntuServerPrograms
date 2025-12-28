@@ -14,13 +14,14 @@ ABS_PATH=$(dirname "$(realpath "$0")")
 # ============================================================
 PRESEED_FILE="$ABS_PATH/preseed.conf"
 SETUP_PRESEED=false
+SETUP_UNATTENDED=false
 
 load_preseed() {
   if [ -f "$PRESEED_FILE" ]; then
     echo "Preseed file detected: $PRESEED_FILE"
     
     # Ask user if they want to use preseed values
-    echo "Use preseed configuration values? [y/n/e(xit)]"
+    echo "Use preseed configuration values? [y/n/u(nattended)/e(xit)]"
     read -t 10 -p "Choice [n]: " USE_PRESEED
     if [ $? -gt 128 ]; then
       # Timeout occurred
@@ -34,14 +35,22 @@ load_preseed() {
       exit 0
     fi
     
-    if [[ ! "$USE_PRESEED" =~ ^[Yy]$ ]]; then
+    if [[ "$USE_PRESEED" =~ ^[Uu]$ ]]; then
+      # Unattended mode: load preseed and set flag to skip all interactive prompts
+      source "$PRESEED_FILE"
+      SETUP_PRESEED=true
+      SETUP_UNATTENDED=true
+      echo "Unattended mode enabled. Using all preseed values without prompts."
+    elif [[ "$USE_PRESEED" =~ ^[Yy]$ ]]; then
+      # Source the preseed file to load all PRESEED_* variables
+      source "$PRESEED_FILE"
+      SETUP_PRESEED=true
+      SETUP_UNATTENDED=false
+      echo "Preseed configuration loaded successfully."
+    else
       echo "Skipping preseed configuration."
       return
     fi
-    
-    # Source the preseed file to load all PRESEED_* variables
-    source "$PRESEED_FILE"
-    SETUP_PRESEED=true
     
     # Auto-derive DMS settings if not explicitly set
     # If DMS_EMAIL is provided, assume choice 2; if DMS_HOSTNAME is provided, assume choice 1
@@ -162,7 +171,7 @@ fi
 source "$ABS_PATH/helpers/menu.sh"
 main
 declare -A OPTIONS
-for key in passwordless_sudoer fail2ban_vpn_bypass surfshark webserver apache_domains certbot phpmyadmin roundcube wp_cli pyenv_python podman lazydocker portainer gitea gitea_runner docker_mailserver n8n selenium homeassistant grafana_otel; do
+for key in passwordless_sudoer fail2ban_vpn_bypass surfshark webserver apache_domains certbot phpmyadmin roundcube wp_cli pyenv_python podman lazydocker portainer gitea gitea_runner docker_mailserver n8n selenium homeassistant grafana_otel kvm; do
     var_name="OPTION_${key}"
     OPTIONS["$key"]="${!var_name}"
 done
@@ -840,6 +849,20 @@ fi
 if [ "${OPTIONS[gitea]}" = "1" ]; then
   prompt_sys_user_action "Gitea" "gitea"
 fi
+if [ "${OPTIONS[gitea_runner]}" = "1" ]; then
+  # Check preseed first, then prompt for GITEA_USERNAME
+  if [ "$SETUP_PRESEED" = true ] && [ -n "${PRESEED_GITEA_USERNAME:-}" ]; then
+    GITEA_USERNAME="$PRESEED_GITEA_USERNAME"
+    echo "Using preseeded Gitea username: $GITEA_USERNAME"
+  else
+    GITEA_USERNAME=$(prompt_with_getinput "Gitea admin username for Act Runner tokens" "" 10 "visible" "false" "true" "false")
+    status=$?
+    if [ $status -eq 200 ] || [ -z "$GITEA_USERNAME" ]; then
+      echo "Warning: No Gitea username provided. giteaGetTokens.sh will need manual configuration."
+      unset GITEA_USERNAME
+    fi
+  fi
+fi
 if [ "${OPTIONS[n8n]}" = "1" ]; then
   prompt_sys_user_action "n8n" "n8n"
 fi
@@ -923,6 +946,15 @@ if [ "${OPTIONS[portainer]}" = "1" ]; then
     status=$?
     if [ $status -eq 200 ] || [ -z "$REINSTALL_PORTAINER" ]; then
       REINSTALL_PORTAINER="n"
+    fi
+  fi
+fi
+if [ "${OPTIONS[kvm]}" = "1" ]; then
+  if command -v virt-install-ubuntu &>/dev/null; then
+    REINSTALL_KVM=$(prompt_with_getinput "KVM/QEMU already installed. Re-install? [y/n]" "n" 10)
+    status=$?
+    if [ $status -eq 200 ] || [ -z "$REINSTALL_KVM" ]; then
+      REINSTALL_KVM="n"
     fi
   fi
 fi
@@ -1292,9 +1324,22 @@ if [ "${OPTIONS[gitea]}" = "1" ]; then
     echo
   fi
 fi
+if [ "${OPTIONS[kvm]}" = "1" ]; then
+  if command -v virt-install-ubuntu &>/dev/null && [[ ! "${REINSTALL_KVM:-n}" =~ ^[Yy]$ ]]; then
+    print_status "KVM/QEMU already installed. Skipping... "
+    echo
+  else
+    print_status "Installing KVM/QEMU virtualization... "
+    bash ./helpers/kvm.sh >>./log 2>&1 &
+    bash ./helpers/progress.sh $!
+    echo
+  fi
+fi
 if [ "${OPTIONS[gitea_runner]}" = "1" ]; then
-    echo "Installing Gitea Act Runner (dual user setup)..."
-    # TODO: Implement Gitea runner installation logic
+  print_status "Installing Gitea Act Runner... "
+  FQDN="$FQDN" GITEA_USERNAME="${GITEA_USERNAME:-}" ABS_PATH="$ABS_PATH" bash ./helpers/runner_install.sh >>./log 2>&1 &
+  bash ./helpers/progress.sh $!
+  echo
 fi
 if [ "${OPTIONS[n8n]}" = "1" ]; then
   if [ "${N8N_REINSTALL:-false}" = true ]; then

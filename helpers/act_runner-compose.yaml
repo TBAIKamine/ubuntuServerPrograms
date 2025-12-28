@@ -1,11 +1,8 @@
-version: "3.8"
-
 services:
   act_runner:
     container_name: act_runner
-    environment:
-      GITEA_INSTANCE_URL=http://gitea.example.com
-      GITEA_RUNNER_REGISTRATION_TOKEN=hash
+    env_file:
+      - .env
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
     image: gitea/act_runner:latest-dind-rootless

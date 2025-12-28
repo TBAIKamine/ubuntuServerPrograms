@@ -97,7 +97,7 @@ if [ -n "${DMS_EMAIL:-}" ] && [ -n "${DMS_EMAIL_PASSWORD:-}" ]; then
   fi
   
   # Wait a moment for container to be ready
-  sleep 5
+  sleep 20
   
   # Get the target user's home directory
   DMS_USER_HOME=$(getent passwd "$DMS_EXEC_USER" | cut -d: -f6)
@@ -105,14 +105,26 @@ if [ -n "${DMS_EMAIL:-}" ] && [ -n "${DMS_EMAIL_PASSWORD:-}" ]; then
   # Try to add email account, handle container not running gracefully
   if [ -n "$DMS_ENV_FILE" ] && [ -f "$DMS_ENV_FILE" ]; then
     # System user with env file
-    if ! sudo -u "$DMS_EXEC_USER" -H bash -c "cd '$DMS_USER_HOME' && source '$DMS_ENV_FILE' && podman exec mailserver setup email add '$DMS_EMAIL' '$DMS_EMAIL_PASSWORD'"; then
+    if ! sudo -u "$DMS_EXEC_USER" -H bash -c "cd '$DMS_DIR' && source '$DMS_ENV_FILE' && podman exec mailserver setup email add '$DMS_EMAIL' '$DMS_EMAIL_PASSWORD'"; then
+      # debug
+      echo "Debug: Checking container status" >> ./log 2>&1
+      sudo -u "$DMS_EXEC_USER" -H bash -c "cd '$DMS_DIR' && source '$DMS_ENV_FILE' && podman ps -a" >> ./log 2>&1
+      echo "Debug: Finished checking container status" >> ./log 2>&1
+      sudo journalctl _UID=$(id -u $DMS_EXEC_USER) >> ./log 2>&1
+      echo "Debug: End log" >> ./log 2>&1
       echo "Warning: email $DMS_EMAIL failed adding - container may not be running yet. Add manually with: podmgr exec dms, then: setup email add $DMS_EMAIL <password>"
     else
       echo "Done"
     fi
   else
     # Regular user
-    if ! sudo -u "$DMS_EXEC_USER" -H bash -c "cd '$DMS_USER_HOME' && podman exec mailserver setup email add '$DMS_EMAIL' '$DMS_EMAIL_PASSWORD'"; then
+    if ! sudo -u "$DMS_EXEC_USER" -H bash -c "cd '$DMS_DIR' && podman exec mailserver setup email add '$DMS_EMAIL' '$DMS_EMAIL_PASSWORD'"; then
+      # debug
+      echo "Debug: Checking container status" >> ./log 2>&1
+      sudo -u "$DMS_EXEC_USER" -H bash -c "cd '$DMS_DIR' && source '$DMS_ENV_FILE' && podman ps -a" >> ./log 2>&1
+      echo "Debug: Finished checking container status" >> ./log 2>&1
+      sudo journalctl _UID=$(id -u $DMS_EXEC_USER) >> ./log 2>&1
+      echo "Debug: End log" >> ./log 2>&1
       echo "Warning: email $DMS_EMAIL failed adding - container may not be running yet. Add manually with: podman exec -it mailserver setup email add $DMS_EMAIL <password>"
     else
       echo "Done"

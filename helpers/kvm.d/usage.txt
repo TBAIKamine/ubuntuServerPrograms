@@ -1,0 +1,49 @@
+virt-install-ubuntu - Create and manage Ubuntu 24.04 VMs
+
+USAGE:
+    virt-install-ubuntu [OPTIONS]
+
+OPTIONS:
+    --name NAME       VM name (default: ubuntu-vm-NNN where NNN is the IP's last octet)
+    --ip IP           Static IP (default: 192.168.122.NNN, next available from 2-254)
+    --uninstall NAME  Completely remove a VM by name (deletes VM and all storage)
+    -h, --help        Show this help message
+
+DESCRIPTION:
+    Creates Ubuntu 24.04 VMs with cloud-init configuration using KVM/QEMU.
+    VM names match the IP's last octet: ubuntu-vm-002 to ubuntu-vm-254
+    IPs are assigned from: 192.168.122.2 to 192.168.122.254
+
+    The base Ubuntu cloud image is cached at /var/lib/libvirt/images/ for
+    faster subsequent VM creation.
+
+EXAMPLES:
+    virt-install-ubuntu
+        Creates ubuntu-vm-002 with IP 192.168.122.2 (or next available)
+
+    virt-install-ubuntu --name webserver
+        Creates VM named 'webserver' with auto-assigned IP
+
+    virt-install-ubuntu --ip 192.168.122.50
+        Creates auto-named VM with specific IP 192.168.122.50
+
+    virt-install-ubuntu --name db-server --ip 192.168.122.100
+        Creates VM 'db-server' with IP 192.168.122.100
+
+    virt-install-ubuntu --uninstall ubuntu-vm-03
+        Removes VM 'ubuntu-vm-03' and all its storage
+
+VM MANAGEMENT:
+    After creation, use these commands to manage VMs:
+
+    ssh ubuntu@<IP>                    Connect to VM (wait ~30s after creation)
+    virsh list --all                   List all VMs
+    virsh start <name>                 Start a VM
+    virsh shutdown <name>              Graceful shutdown
+    virsh destroy <name>               Force stop
+    virsh console <name>               Serial console access
+
+FILES:
+    /var/lib/libvirt/images/<vm-name>/     VM disk and cloud-init images
+    /var/lib/libvirt/images/ubuntu-24.04-server-cloudimg-amd64.img
+                                           Cached base image (shared)
