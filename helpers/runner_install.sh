@@ -186,8 +186,8 @@ ssh -i "$SSH_KEY_PATH" -o StrictHostKeyChecking=no "$VM_USER@$VM_IP" "rm -f ~/se
 if [ -n "$RUNNER_TOKEN" ]; then
   echo "Creating main runner instance..."
   ssh -i "$SSH_KEY_PATH" -o StrictHostKeyChecking=no "$VM_USER@$VM_IP" \
-    "~/runnermgr.sh --type repo --token '$RUNNER_TOKEN' --name instance"
-  echo "Runner instance created at ~/runners/repo_instance"
+    "~/runnermgr.sh --type instance --token '$RUNNER_TOKEN'"
+  echo "Runner instance created at ~/runners/instance"
 else
   echo "Warning: No runner token found. Run giteaGetTokens.sh first, then use runnermgr.sh to create a runner instance."
 fi

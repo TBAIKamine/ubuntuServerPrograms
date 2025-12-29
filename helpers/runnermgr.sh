@@ -21,13 +21,17 @@ Usage: $(basename "$0") [OPTIONS]
 Create a new Gitea Act Runner instance.
 
 Options:
-  --name <name>           Name for the runner instance (required)
+  --name <name>           Name for the runner instance (required for repo/org types)
                           (lowercase alphanumeric and hyphens only, must start with a letter, max 50 chars)
-  --type <repo|org>       Type of runner (default: repo)
+  --type <instance|repo|org>  Type of runner (default: repo)
+                              - instance: Global instance runner (name is ignored, always 'instance')
+                              - org: Organization-level runner (creates org_<name>)
+                              - repo: Repository-level runner (creates repo_<name>)
   --token <token>         Gitea runner registration token (required)
   -h, --help              Show this help message
 
 Examples:
+  $(basename "$0") --type instance --token abc123
   $(basename "$0") --token abc123 --name myrepo
   $(basename "$0") --type org --token abc123 --name myorg
 
@@ -65,8 +69,8 @@ validate_name() {
 validate_type() {
   local type="$1"
   
-  if [ "$type" != "repo" ] && [ "$type" != "org" ]; then
-    echo "Error: Type must be 'repo' or 'org'" >&2
+  if [ "$type" != "instance" ] && [ "$type" != "repo" ] && [ "$type" != "org" ]; then
+    echo "Error: Type must be 'instance', 'repo', or 'org'" >&2
     exit 1
   fi
 }
@@ -107,13 +111,16 @@ if [ -z "$TOKEN" ]; then
   usage 1
 fi
 
-if [ -z "$NAME" ]; then
-  echo "Error: --name is required" >&2
-  usage 1
-fi
-
-validate_name "$NAME"
 validate_type "$TYPE"
+
+# Name is required for repo/org types, ignored for instance type
+if [ "$TYPE" != "instance" ]; then
+  if [ -z "$NAME" ]; then
+    echo "Error: --name is required for $TYPE type" >&2
+    usage 1
+  fi
+  validate_name "$NAME"
+fi
 
 # Check dependencies directory exists
 if [ ! -d "$DEPS_DIR" ]; then
@@ -131,8 +138,14 @@ if [ ! -f "$DEPS_DIR/.env" ]; then
   exit 1
 fi
 
-# Create instance directory
-INSTANCE_DIR="$RUNNERS_DIR/${TYPE}_${NAME}"
+# Generate instance directory and runner/container name based on type
+if [ "$TYPE" = "instance" ]; then
+  INSTANCE_DIR="$RUNNERS_DIR/instance"
+  RUNNER_NAME="instance"
+else
+  INSTANCE_DIR="$RUNNERS_DIR/${TYPE}_${NAME}"
+  RUNNER_NAME="${TYPE}-${NAME}"
+fi
 
 if [ -d "$INSTANCE_DIR" ]; then
   echo "Error: Instance already exists: $INSTANCE_DIR" >&2
@@ -140,10 +153,11 @@ if [ -d "$INSTANCE_DIR" ]; then
   exit 1
 fi
 
-# Generate runner/container name
-RUNNER_NAME="${TYPE}-${NAME}"
-
-echo "Creating runner instance: ${TYPE}_${NAME}"
+if [ "$TYPE" = "instance" ]; then
+  echo "Creating global instance runner"
+else
+  echo "Creating runner instance: ${TYPE}_${NAME}"
+fi
 echo "Runner/Container name: $RUNNER_NAME"
 mkdir -p "$INSTANCE_DIR"
 
@@ -155,3 +169,12 @@ sed "s|container_name:.*|container_name: $RUNNER_NAME|" \
 sed -e "s|GITEA_RUNNER_REGISTRATION_TOKEN=.*|GITEA_RUNNER_REGISTRATION_TOKEN=$TOKEN|" \
     -e "s|GITEA_RUNNER_NAME=.*|GITEA_RUNNER_NAME=$RUNNER_NAME|" \
     "$DEPS_DIR/.env" > "$INSTANCE_DIR/.env"
+
+# Start the runner container
+echo "Starting runner container..."
+cd "$INSTANCE_DIR"
+docker compose up -d
+
+echo "Runner '$RUNNER_NAME' is now running."
+echo "To check status: docker ps | grep $RUNNER_NAME"
+echo "To view logs: docker logs -f $RUNNER_NAME"
