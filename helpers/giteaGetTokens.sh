@@ -77,12 +77,12 @@ if [ -z "$ACTION" ]; then
   exit 1
 fi
 
-if [ -z "$GITEA_USERNAME" ] || [ "$GITEA_USERNAME" = "__GITEA_USERNAME__" ]; then
+if [ -z "$GITEA_USERNAME" ] || [[ "$GITEA_USERNAME" == __*__ ]]; then
   echo "Error: GITEA_USERNAME not configured. Please edit this script or re-run installation."
   exit 1
 fi
 
-if [ -z "$GITEA_URL" ] || [ "$GITEA_URL" = "__GITEA_URL__" ]; then
+if [ -z "$GITEA_URL" ] || [[ "$GITEA_URL" == __*__ ]]; then
   echo "Error: GITEA_URL not configured. Please edit this script or re-run installation."
   exit 1
 fi

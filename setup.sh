@@ -852,7 +852,7 @@ fi
 if [ "${OPTIONS[gitea_runner]}" = "1" ]; then
   # Check preseed first, then prompt for GITEA_USERNAME
   if [ "$SETUP_PRESEED" = true ] && [ -n "${PRESEED_GITEA_USERNAME:-}" ]; then
-    GITEA_USERNAME="$PRESEED_GITEA_USERNAME"
+    export GITEA_USERNAME="$PRESEED_GITEA_USERNAME"
     echo "Using preseeded Gitea username: $GITEA_USERNAME"
   else
     GITEA_USERNAME=$(prompt_with_getinput "Gitea admin username for Act Runner tokens" "" 10 "visible" "false" "true" "false")
@@ -860,6 +860,8 @@ if [ "${OPTIONS[gitea_runner]}" = "1" ]; then
     if [ $status -eq 200 ] || [ -z "$GITEA_USERNAME" ]; then
       echo "Warning: No Gitea username provided. giteaGetTokens.sh will need manual configuration."
       unset GITEA_USERNAME
+    else
+      export GITEA_USERNAME
     fi
   fi
 fi
