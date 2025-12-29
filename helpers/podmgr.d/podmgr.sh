@@ -91,74 +91,11 @@ EOF
   # Run hook right before enabling services (user setup complete, runtime dir ready)
   run_hook "$hook"
 
-  # Create log file that the user can write to
-  local user_log="$home_dir/podmgr-compose.log"
-  touch "$user_log"
-  chown "$user:$user" "$user_log"
-  chmod 644 "$user_log"
-  
-  # Also create system log
-  local sys_log="/var/log/podmgr.log"
-  touch "$sys_log"
-  chmod 666 "$sys_log"
-
-  # Log setup state for debugging
-  echo "=== podmgr setup debug $(date) ===" >> "$sys_log"
-  echo "User: $user, UID: $uid_num" >> "$sys_log"
-  echo "Home: $home_dir, Compose: $compose_dir" >> "$sys_log"
-  echo "User log file: $user_log" >> "$sys_log"
-  echo "Runtime dir: /run/user/$uid_num exists: $(test -d /run/user/$uid_num && echo yes || echo no)" >> "$sys_log"
-  echo "Service unit file: $home_dir/.config/systemd/user/$service_name" >> "$sys_log"
-  echo "--- Service unit contents ---" >> "$sys_log"
-  cat "$home_dir/.config/systemd/user/$service_name" >> "$sys_log" 2>&1 || echo "FAILED TO READ SERVICE FILE" >> "$sys_log"
-  echo "--- End service unit ---" >> "$sys_log"
-  
-  echo "=== daemon-reload ===" >> "$sys_log"
-  sudo -u "$user" -H bash -c "cd '$home_dir' && source '$env_file' && systemctl --user daemon-reload" >> "$sys_log" 2>&1
-  local reload_exit=$?
-  echo "daemon-reload exit code: $reload_exit" >> "$sys_log"
-
-  # Debug: check podman state before enabling service
-  echo "=== Podman state before service start ===" >> "$sys_log"
-  sudo -u "$user" -H bash -c "cd '$home_dir' && source '$env_file' && podman info 2>&1 | head -50" >> "$sys_log" 2>&1 || true
-  sudo -u "$user" -H bash -c "cd '$home_dir' && source '$env_file' && podman network ls" >> "$sys_log" 2>&1 || true
-
-  # Enable and start service with VERBOSE logging
-  echo "=== systemctl --user enable --now $service_name ===" >> "$sys_log"
-  echo "Running: sudo -u $user -H bash -c \"cd '$home_dir' && source '$env_file' && systemctl --user enable --now '$service_name'\"" >> "$sys_log"
-  sudo -u "$user" -H bash -c "cd '$home_dir' && source '$env_file' && set -x && systemctl --user enable --now '$service_name' 2>&1" >> "$sys_log" 2>&1
-  local enable_exit=$?
-  echo "enable --now exit code: $enable_exit" >> "$sys_log"
-  
-  # Check if service is actually running
-  echo "=== Immediate service check ===" >> "$sys_log"
-  sudo -u "$user" -H bash -c "cd '$home_dir' && source '$env_file' && systemctl --user is-active '$service_name'" >> "$sys_log" 2>&1
-  echo "is-active exit code: $?" >> "$sys_log"
-  
-  sudo -u "$user" -H bash -c "cd '$home_dir' && source '$env_file' && systemctl --user enable --now podman.socket" >> "$sys_log" 2>&1 || true
-
-  # Debug: check service status after enabling
-  echo "=== Service status after enable ===" >> "$sys_log"
-  sudo -u "$user" -H bash -c "cd '$home_dir' && source '$env_file' && systemctl --user status '$service_name' --no-pager -l" >> "$sys_log" 2>&1 || true
-  
-  # Check journalctl for the service
-  echo "=== journalctl for $service_name ===" >> "$sys_log"
-  sudo -u "$user" -H bash -c "cd '$home_dir' && source '$env_file' && journalctl --user -u '$service_name' --no-pager -n 50" >> "$sys_log" 2>&1 || true
-  
-  # Check if the user log file was written to
-  echo "=== User log file check ===" >> "$sys_log"
-  echo "User log exists: $(test -f "$user_log" && echo yes || echo no)" >> "$sys_log"
-  echo "User log size: $(stat -c%s "$user_log" 2>/dev/null || echo 0)" >> "$sys_log"
-  if [ -f "$user_log" ] && [ -s "$user_log" ]; then
-    echo "--- User log contents ---" >> "$sys_log"
-    cat "$user_log" >> "$sys_log" 2>&1
-    echo "--- End user log ---" >> "$sys_log"
-  fi
-  
-  echo "=== End podmgr setup debug ===" >> "$sys_log"
+  sudo -u "$user" -H bash -c "cd '$home_dir' && source '$env_file' && systemctl --user daemon-reload"
+  sudo -u "$user" -H bash -c "cd '$home_dir' && source '$env_file' && systemctl --user enable --now '$service_name'"
+  sudo -u "$user" -H bash -c "cd '$home_dir' && source '$env_file' && systemctl --user enable --now podman.socket" || true
 
   echo "Created user $user"
-  echo "Debug logs: $sys_log and $user_log"
 }
 
 do_cleanup() {

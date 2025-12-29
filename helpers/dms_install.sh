@@ -80,36 +80,15 @@ dms_acl_hook() {
 
 export -f dms_acl_hook
 
-echo "=== DMS Container Setup ==="
-echo "DMS_SYS_USER: ${DMS_SYS_USER:-false}"
-echo "DMS_OWNER: $DMS_OWNER"
-echo "DMS_DIR: $DMS_DIR"
-echo "SUDO_USER: ${SUDO_USER:-not set}"
-
 if [ "${DMS_SYS_USER:-false}" = "true" ]; then
   echo "Starting container as system user 'dms' via podmgr..."
   apt install -y acl
-  # podmgr setup creates the user, chowns compose-dir, and starts container service
-  echo "Running: podmgr setup --user dms --compose-dir $DMS_DIR --hook dms_acl_hook"
-  podmgr setup --user dms --compose-dir "$DMS_DIR" --hook dms_acl_hook 2>&1
-  echo "podmgr exit code: $?"
+  podmgr setup --user dms --compose-dir "$DMS_DIR" --hook dms_acl_hook
 else
   echo "Starting container as user '$SUDO_USER' via podman-compose..."
-  # For non-sys user, chown now (user already exists)
   chown -R "$DMS_OWNER:$DMS_OWNER" $DMS_DIR
-  echo "Running: cd '$DMS_DIR' && podman-compose up -d"
-  sudo -u "$SUDO_USER" -H bash -c "cd '$DMS_DIR' && podman-compose up -d" 2>&1
-  echo "podman-compose exit code: $?"
+  sudo -u "$SUDO_USER" -H bash -c "cd '$DMS_DIR' && podman-compose up -d"
 fi
-
-# Check container status right after start attempt
-echo "=== Checking container status after start ==="
-if [ "${DMS_SYS_USER:-false}" = "true" ]; then
-  sudo -u dms -H bash -c "cd '$DMS_DIR' && source /var/lib/dms/.config/environment.d/podman.conf 2>/dev/null; podman ps -a" 2>&1 || echo "Failed to check container status for dms user"
-else
-  sudo -u "$SUDO_USER" -H bash -c "cd '$DMS_DIR' && podman ps -a" 2>&1 || echo "Failed to check container status for $SUDO_USER"
-fi
-echo "=== End container status check ==="
 
 # Add email account if email and password were provided
 if [ -n "${DMS_EMAIL:-}" ] && [ -n "${DMS_EMAIL_PASSWORD:-}" ]; then
@@ -164,12 +143,6 @@ if [ -n "${DMS_EMAIL:-}" ] && [ -n "${DMS_EMAIL_PASSWORD:-}" ]; then
   if [ -n "$DMS_ENV_FILE" ] && [ -f "$DMS_ENV_FILE" ]; then
     # System user with env file
     if ! sudo -u "$DMS_EXEC_USER" -H bash -c "cd '$DMS_DIR' && source '$DMS_ENV_FILE' && podman exec mailserver setup email add '$DMS_EMAIL' '$DMS_EMAIL_PASSWORD'"; then
-      # debug
-      echo "Debug: Checking container status" >> ./log 2>&1
-      sudo -u "$DMS_EXEC_USER" -H bash -c "cd '$DMS_DIR' && source '$DMS_ENV_FILE' && podman ps -a" >> ./log 2>&1
-      echo "Debug: Finished checking container status" >> ./log 2>&1
-      journalctl _UID=$(id -u $DMS_EXEC_USER) >> ./log 2>&1
-      echo "Debug: End log" >> ./log 2>&1
       echo "Warning: email $DMS_EMAIL failed adding - container may not be running yet. Add manually with: podmgr exec dms, then: setup email add $DMS_EMAIL <password>"
     else
       echo "Done"
@@ -177,12 +150,6 @@ if [ -n "${DMS_EMAIL:-}" ] && [ -n "${DMS_EMAIL_PASSWORD:-}" ]; then
   else
     # Regular user
     if ! sudo -u "$DMS_EXEC_USER" -H bash -c "cd '$DMS_DIR' && podman exec mailserver setup email add '$DMS_EMAIL' '$DMS_EMAIL_PASSWORD'"; then
-      # debug
-      echo "Debug: Checking container status" >> ./log 2>&1
-      sudo -u "$DMS_EXEC_USER" -H bash -c "cd '$DMS_DIR' && source '$DMS_ENV_FILE' && podman ps -a" >> ./log 2>&1
-      echo "Debug: Finished checking container status" >> ./log 2>&1
-      journalctl _UID=$(id -u $DMS_EXEC_USER) >> ./log 2>&1
-      echo "Debug: End log" >> ./log 2>&1
       echo "Warning: email $DMS_EMAIL failed adding - container may not be running yet. Add manually with: podman exec -it mailserver setup email add $DMS_EMAIL <password>"
     else
       echo "Done"

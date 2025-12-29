@@ -1,5 +1,14 @@
 #!/bin/bash
-apt install podman podman-compose -y
+# Install crun from source (required for podman 5+)
+ABS_PATH=$(dirname "$(realpath "$0")")
+bash "$ABS_PATH/crun.sh"
+
+# Install podman from source (latest version from GitHub)
+bash "$ABS_PATH/podman-5.7.1.sh"
+
+# Install podman-compose from apt
+apt install podman-compose -y
+
 # Match the key even if indented or preceded by a comment "# ",
 # then append "\"docker.io\"" before the closing bracket.
 sed -i -E 's/^([[:space:]]*)(# )?unqualified-search-registries[[:space:]]*=[[:space:]]*\[.*\].*/\1unqualified-search-registries = ["docker.io"]/g' /etc/containers/registries.conf
