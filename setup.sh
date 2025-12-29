@@ -850,6 +850,11 @@ if [ "${OPTIONS[gitea]}" = "1" ]; then
   prompt_sys_user_action "Gitea" "gitea"
 fi
 if [ "${OPTIONS[gitea_runner]}" = "1" ]; then
+  # Ensure FQDN is set from preseed if not already set (e.g., webserver already installed)
+  if [ -z "${FQDN:-}" ] && [ "$SETUP_PRESEED" = true ] && [ -n "${PRESEED_FQDN:-}" ]; then
+    FQDN="$PRESEED_FQDN"
+    echo "Using preseeded FQDN for gitea_runner: $FQDN"
+  fi
   # Check preseed first, then prompt for GITEA_USERNAME
   if [ "$SETUP_PRESEED" = true ] && [ -n "${PRESEED_GITEA_USERNAME:-}" ]; then
     export GITEA_USERNAME="$PRESEED_GITEA_USERNAME"
