@@ -91,25 +91,26 @@ EOF
   # Run hook right before enabling services (user setup complete, runtime dir ready)
   run_hook "$hook"
 
+  # Log setup state for debugging
+  echo "=== podmgr setup debug $(date) ===" >> /var/log/podmgr.log
+  echo "User: $user, UID: $uid_num" >> /var/log/podmgr.log
+  echo "Home: $home_dir, Compose: $compose_dir" >> /var/log/podmgr.log
+  echo "Runtime dir: /run/user/$uid_num exists: $(test -d /run/user/$uid_num && echo yes || echo no)" >> /var/log/podmgr.log
+  
   sudo -u "$user" -H bash -c "cd '$home_dir' && source '$env_file' && systemctl --user daemon-reload" >> /var/log/podmgr.log 2>&1 || true
 
-  # Pre-create compose networks to avoid rootless netns race condition
-  local compose_file="$compose_dir/compose.yaml"
-  [ ! -f "$compose_file" ] && compose_file="$compose_dir/docker-compose.yaml"
-  if [ -f "$compose_file" ]; then
-    local project_name=$(basename "$compose_dir")
-    # Extract defined networks, or use default if none defined
-    local networks=$(grep -E '^networks:' -A 100 "$compose_file" | grep -E '^  [a-zA-Z0-9_-]+:' | sed 's/:.*//' | tr -d ' ' || true)
-    if [ -z "$networks" ]; then
-      networks="default"
-    fi
-    for net in $networks; do
-      sudo -u "$user" -H bash -c "cd '$home_dir' && source '$env_file' && podman network create ${project_name}_${net}" >> /var/log/podmgr.log 2>&1 || true
-    done
-  fi
+  # Debug: check podman state before enabling service
+  echo "=== Podman state before service start ===" >> /var/log/podmgr.log
+  sudo -u "$user" -H bash -c "cd '$home_dir' && source '$env_file' && podman info 2>&1 | head -50" >> /var/log/podmgr.log 2>&1 || true
+  sudo -u "$user" -H bash -c "cd '$home_dir' && source '$env_file' && podman network ls" >> /var/log/podmgr.log 2>&1 || true
 
   sudo -u "$user" -H bash -c "cd '$home_dir' && source '$env_file' && systemctl --user enable --now '$service_name'" >> /var/log/podmgr.log 2>&1 || true
   sudo -u "$user" -H bash -c "cd '$home_dir' && source '$env_file' && systemctl --user enable --now podman.socket" >> /var/log/podmgr.log 2>&1 || true
+
+  # Debug: check service status after enabling
+  echo "=== Service status after enable ===" >> /var/log/podmgr.log
+  sudo -u "$user" -H bash -c "cd '$home_dir' && source '$env_file' && systemctl --user status '$service_name' --no-pager" >> /var/log/podmgr.log 2>&1 || true
+  echo "=== End podmgr setup debug ===" >> /var/log/podmgr.log
 
   echo "Created user $user"
 }
@@ -125,34 +126,60 @@ do_cleanup() {
   fi
 
   local uid_num=$(id -u "$user" 2>/dev/null)
-
   local env_file=$(get_user_env "$user")
+
+  # Stop and disable user services
   if [ -n "$uid_num" ] && [ -d "/run/user/$uid_num" ]; then
     sudo -u "$user" -H bash -c "
       cd '$home_dir'
       source '$env_file'
-      systemctl --user disable --now '$service_name'
-      systemctl --user disable --now podman.socket
+      # Stop compose first
+      cd '$compose_dir' 2>/dev/null && podman-compose down --remove-orphans 2>/dev/null || true
+      # Disable services
+      systemctl --user disable --now '$service_name' 2>/dev/null || true
+      systemctl --user disable --now podman.socket 2>/dev/null || true
+      # NUKE ALL PODMAN DATA
+      podman stop -a -t 0 2>/dev/null || true
+      podman rm -a -f 2>/dev/null || true
+      podman network prune -f 2>/dev/null || true
+      podman volume prune -f 2>/dev/null || true
+      podman image prune -a -f 2>/dev/null || true
+      podman system reset -f 2>/dev/null || true
     " 2>/dev/null || true
   fi
 
   loginctl disable-linger "$user" 2>/dev/null || true
+
+  # Kill any remaining user processes
+  [ -n "$uid_num" ] && pkill -9 -u "$uid_num" 2>/dev/null || true
 
   [ -n "$uid_num" ] && {
     systemctl stop "user@$uid_num.service" 2>/dev/null || true
     systemctl stop "user-runtime-dir@$uid_num.service" 2>/dev/null || true
   }
 
+  # Remove subuid/subgid entries
   [ -f /etc/subuid ] && sed -i "/^$user:/d" /etc/subuid
   [ -f /etc/subgid ] && sed -i "/^$user:/d" /etc/subgid
 
+  # OBLITERATE compose directory
   [ -d "$compose_dir" ] && rm -rf "$compose_dir"
 
+  # Delete user (also removes home)
   userdel -r "$user" 2>/dev/null || true
+
+  # OBLITERATE any remaining home directory
   [ -d "$home_dir" ] && rm -rf "$home_dir"
+
+  # OBLITERATE runtime directory
   [ -n "$uid_num" ] && [ -d "/run/user/$uid_num" ] && rm -rf "/run/user/$uid_num"
 
-  echo "Removed $user"
+  # OBLITERATE any podman storage that might be elsewhere
+  rm -rf "/tmp/podman-run-$uid_num" 2>/dev/null || true
+  rm -rf "/tmp/containers-user-$uid_num" 2>/dev/null || true
+  rm -rf "/var/tmp/containers-user-$uid_num" 2>/dev/null || true
+
+  echo "Removed $user and ALL associated data"
 }
 
 do_reinstall() {
