@@ -168,6 +168,7 @@ if [ "$ACTION" = "init" ]; then
   echo "Generating Personal Access Token for user: $GITEA_USERNAME"
 
   # podmgr exec only opens an interactive shell, so we need to run podman directly as the gitea user
+  # Note: gitea outputs the token to stderr, so we must redirect 2>&1
   PAT=$(sudo -u gitea -H bash -c '
     cd /opt/compose/gitea || exit 1
     source /var/lib/gitea/.config/environment.d/podman.conf 2>/dev/null || true
@@ -179,12 +180,12 @@ if [ "$ACTION" = "init" ]; then
       --username "'"$GITEA_USERNAME"'" \
       --token-name "automation-token" \
       --scopes all \
-      --raw 2>/dev/null
+      --raw 2>&1
   ')
 
-  # Filter to get only the token (last non-empty line)
+  # Filter to get only the token (40 alphanumeric chars)
   if [ -n "$PAT" ]; then
-    PAT=$(echo "$PAT" | grep -v "^$" | tail -1)
+    PAT=$(echo "$PAT" | grep -oE '^[a-zA-Z0-9]{40}$' | head -1)
   fi
 
   if [ -z "$PAT" ]; then
