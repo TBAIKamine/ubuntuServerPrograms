@@ -58,6 +58,7 @@ do_setup() {
   cat > "$env_file" <<EOF
 XDG_RUNTIME_DIR=/run/user/$uid_num
 DOCKER_HOST=unix:///run/user/$uid_num/podman/podman.sock
+export XDG_RUNTIME_DIR DOCKER_HOST
 EOF
   chown -R "$user:$user" "$home_dir"
 
