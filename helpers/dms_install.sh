@@ -25,8 +25,8 @@ if [[ -n "${DMS_FQDN:-}" ]]; then
     fi
     
     # Use a2sitemgr to create domain config (this will handle SSL cert via certbot)
-    echo "Running: a2sitemgr ${DMS_FQDN} --mode domain --non-interactive"
-    if ! a2sitemgr "${DMS_FQDN}" --mode domain --non-interactive; then
+    echo "Running: a2sitemgr ${DMS_FQDN} --mode domain -v"
+    if ! a2sitemgr "${DMS_FQDN}" --mode domain -v; then
       echo "Error: a2sitemgr failed to configure domain ${DMS_FQDN}."
       echo "Please check the output above and resolve any issues before retrying."
       exit 1
