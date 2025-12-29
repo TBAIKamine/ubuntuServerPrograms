@@ -4,6 +4,7 @@ version: "2"
 services:
   server:
     image: docker.gitea.com/gitea:latest-rootless
+    container_name: gitea
     logging:
       driver: journald
     userns_mode: "keep-id:uid=1000,gid=1000"
