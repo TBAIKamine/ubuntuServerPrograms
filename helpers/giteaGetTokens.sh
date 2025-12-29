@@ -168,18 +168,27 @@ if [ "$ACTION" = "init" ]; then
   echo "Generating Personal Access Token for user: $GITEA_USERNAME"
 
   # podmgr exec only opens an interactive shell, so we need to run podman directly as the gitea user
-  PAT=$(timeout 30s sudo -u gitea -H bash -c '
-    cd /opt/compose/gitea
-    source /var/lib/gitea/.config/environment.d/podman.conf
+  PAT=$(sudo -u gitea -H bash -c '
+    cd /opt/compose/gitea || exit 1
+    source /var/lib/gitea/.config/environment.d/podman.conf 2>/dev/null || true
     CONTAINER_NAME=$(grep "container_name:" compose.yaml 2>/dev/null || grep "container_name:" docker-compose.yaml 2>/dev/null | head -1 | awk "{print \$2}")
-    podman exec "$CONTAINER_NAME" gitea admin user generate-access-token \
+    if [ -z "$CONTAINER_NAME" ]; then
+      echo "Error: Could not find container name" >&2
+      exit 1
+    fi
+    timeout 30s podman exec "$CONTAINER_NAME" gitea admin user generate-access-token \
       --username "'"$GITEA_USERNAME"'" \
       --token-name "automation-token" \
       --scopes all \
       --raw
-  ' 2>/dev/null || true)
+  ' 2>&1) || true
 
-  if [ -z "$PAT" ]; then
+  # Filter out any error messages - PAT should be a single line token without spaces or "Error"
+  if [ -n "$PAT" ]; then
+    PAT=$(echo "$PAT" | grep -v -i "error" | grep -v "^$" | tail -1)
+  fi
+
+  if [ -z "$PAT" ] || [[ "$PAT" == *"Error"* ]] || [[ "$PAT" == *"error"* ]]; then
     # Save config for retry
     ENV_DIR="/home/${SUDO_USER:-$USER}/.config/gitea"
     mkdir -p "$ENV_DIR"
