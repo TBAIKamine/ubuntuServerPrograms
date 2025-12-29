@@ -66,17 +66,15 @@ mkdir -p /usr/share/containers
 cat > /etc/containers/containers.conf <<'CONF'
 [engine]
 runtime = "crun"
+conmon_path = [
+  "/usr/local/bin/conmon",
+  "/usr/bin/conmon"
+]
 
 [engine.runtimes]
 crun = [
   "/usr/bin/crun",
   "/usr/local/bin/crun"
-]
-
-[engine]
-conmon_path = [
-  "/usr/local/bin/conmon",
-  "/usr/bin/conmon"
 ]
 CONF
 

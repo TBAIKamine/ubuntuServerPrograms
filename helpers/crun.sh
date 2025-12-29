@@ -3,6 +3,7 @@ set -e
 
 # Remove apt version of crun
 apt purge -y crun || true
+rm /etc/containers/policy.json 2>/dev/null || true
 
 # Create temp directory for build
 BUILD_DIR=$(mktemp -d)

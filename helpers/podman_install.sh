@@ -1,7 +1,19 @@
 #!/bin/bash
 # Install crun from source (required for podman 5+)
 ABS_PATH=$(dirname "$(realpath "$0")")
-bash "$ABS_PATH/crun.sh"
+# Check if crun exists and version is >= 1.15
+if command -v crun >/dev/null 2>&1; then
+    CRUN_VERSION=$(crun --version | awk '{print $2}')
+    # Compare versions using sort -V
+    if [ "$(printf '%s\n' "1.15" "$CRUN_VERSION" | sort -V | head -n1)" = "1.15" ]; then
+        echo "crun $CRUN_VERSION is already installed and >= 1.15"
+        SKIP_CRUN_INSTALL=1
+    fi
+fi
+
+if [ -z "$SKIP_CRUN_INSTALL" ]; then
+    bash "$ABS_PATH/crun.sh"
+fi
 
 # Install podman from source (latest version from GitHub)
 bash "$ABS_PATH/podman-5.7.1.sh"
