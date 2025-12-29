@@ -92,6 +92,22 @@ EOF
   run_hook "$hook"
 
   sudo -u "$user" -H bash -c "cd '$home_dir' && source '$env_file' && systemctl --user daemon-reload" >> /var/log/podmgr.log 2>&1 || true
+
+  # Pre-create compose networks to avoid rootless netns race condition
+  local compose_file="$compose_dir/compose.yaml"
+  [ ! -f "$compose_file" ] && compose_file="$compose_dir/docker-compose.yaml"
+  if [ -f "$compose_file" ]; then
+    local project_name=$(basename "$compose_dir")
+    # Extract defined networks, or use default if none defined
+    local networks=$(grep -E '^networks:' -A 100 "$compose_file" | grep -E '^  [a-zA-Z0-9_-]+:' | sed 's/:.*//' | tr -d ' ' || true)
+    if [ -z "$networks" ]; then
+      networks="default"
+    fi
+    for net in $networks; do
+      sudo -u "$user" -H bash -c "cd '$home_dir' && source '$env_file' && podman network create ${project_name}_${net}" >> /var/log/podmgr.log 2>&1 || true
+    done
+  fi
+
   sudo -u "$user" -H bash -c "cd '$home_dir' && source '$env_file' && systemctl --user enable --now '$service_name'" >> /var/log/podmgr.log 2>&1 || true
   sudo -u "$user" -H bash -c "cd '$home_dir' && source '$env_file' && systemctl --user enable --now podman.socket" >> /var/log/podmgr.log 2>&1 || true
 
