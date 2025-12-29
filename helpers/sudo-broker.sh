@@ -3,8 +3,11 @@
 # sudo-broker.sh - Passwordless sudo via DEVICE_ACCESS secret validation
 # This script is called VIA sudo (from the alias) and runs as root.
 # It validates the DEVICE_ACCESS environment variable against a stored hash.
-# If valid, it directly executes the command (already running as root).
+# If valid, it executes the command using the real sudo binary (to handle -u, -H, etc.).
 # If invalid, access is denied.
+
+# Path to the real sudo binary (avoid alias recursion)
+REAL_SUDO="/usr/bin/sudo"
 
 # 1. Path to the stored hash
 HASH_FILE="/etc/sudo_secret.hash"
@@ -26,9 +29,9 @@ PROVIDED_HASH=$(printf '%s' "$PROVIDED_SECRET" | tr -d '\r\n' | sha256sum | awk 
 
 # 6. Compare the hashes
 if [ "$PROVIDED_HASH" == "$EXPECTED_HASH" ] && [ -n "$PROVIDED_SECRET" ]; then
-  # Already running as root (called via sudo), directly execute the command
-  # This preserves SUDO_USER correctly (set by the initial sudo call)
-  exec "$@"
+  # Secret validated - use the real sudo binary to execute with all original arguments
+  # This handles sudo flags like -u, -H, -i, -E, etc.
+  exec "$REAL_SUDO" "$@"
 else
   # Failure: log the attempt and exit
   logger "Unauthorized sudo attempt by ${SUDO_USER:-$USER} from ${SSH_CONNECTION:-local}"
