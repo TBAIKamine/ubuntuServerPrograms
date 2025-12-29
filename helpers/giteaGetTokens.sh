@@ -9,11 +9,24 @@
 #
 # Each runner token can only be obtained ONCE. The registry tracks created runners.
 
+# Must run as root/sudo
+if [ "$EUID" -ne 0 ]; then
+  echo "Error: This script must be run with sudo" >&2
+  exit 1
+fi
+
 set -e
 
 GITEA_USERNAME="__GITEA_USERNAME__"
 GITEA_URL="__GITEA_URL__"
 CONFIG_DIR="__CONFIG_DIR__"
+
+# Load from .env if variables are not configured (allows retry after failed --init)
+ENV_FILE="/home/${SUDO_USER:-$USER}/.config/gitea/.env"
+if [ -f "$ENV_FILE" ]; then
+  source "$ENV_FILE"
+fi
+
 REGISTRY_FILE="$CONFIG_DIR/.runners_registry"
 
 # Parse arguments
@@ -153,16 +166,33 @@ if [ "$ACTION" = "init" ]; then
   fi
 
   echo "Generating Personal Access Token for user: $GITEA_USERNAME"
-  cd /opt/compose/gitea
 
-  PAT=$(podmgr exec gitea gitea admin user generate-access-token \
-    --username "$GITEA_USERNAME" \
-    --token-name "automation-token" \
-    --scopes all \
-    --raw 2>/dev/null || true)
+  # podmgr exec only opens an interactive shell, so we need to run podman directly as the gitea user
+  PAT=$(timeout 30s sudo -u gitea -H bash -c "
+    cd /opt/compose/gitea
+    source /var/lib/gitea/.config/environment.d/podman.conf
+    CONTAINER_NAME=$(grep 'container_name:' compose.yaml 2>/dev/null || grep 'container_name:' docker-compose.yaml 2>/dev/null | head -1 | awk '{print $2}')
+    podman exec "$CONTAINER_NAME" gitea admin user generate-access-token \
+      --username '$GITEA_USERNAME' \
+      --token-name 'automation-token' \
+      --scopes all \
+      --raw
+  " 2>/dev/null || true)
 
   if [ -z "$PAT" ]; then
-    echo "Error: Failed to generate PAT. Make sure Gitea is running and the user exists."
+    # Save config for retry
+    ENV_DIR="/home/${SUDO_USER:-$USER}/.config/gitea"
+    mkdir -p "$ENV_DIR"
+    cat > "$ENV_DIR/.env" <<ENVEOF
+GITEA_USERNAME="$GITEA_USERNAME"
+GITEA_URL="$GITEA_URL"
+CONFIG_DIR="$CONFIG_DIR"
+ENVEOF
+    chown -R "${SUDO_USER:-$USER}:${SUDO_USER:-$USER}" "$ENV_DIR"
+    chmod 600 "$ENV_DIR/.env"
+    echo "Error: Failed to generate PAT or timed out. if you haven't installed Gitea from the web interface, you must do it first."
+    echo "Config saved to $ENV_DIR/.env for retry."
+    echo "then execute: giteaGetTokens --init"
     exit 1
   fi
 
