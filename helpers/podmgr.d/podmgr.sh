@@ -90,9 +90,9 @@ EOF
   # Run hook right before enabling services (user setup complete, runtime dir ready)
   run_hook "$hook"
 
-  sudo -u "$user" -H bash -c "cd '$home_dir' && source '$env_file' && systemctl --user daemon-reload" 2>/dev/null || true
-  sudo -u "$user" -H bash -c "cd '$home_dir' && source '$env_file' && systemctl --user enable --now '$service_name'" 2>/dev/null || true
-  sudo -u "$user" -H bash -c "cd '$home_dir' && source '$env_file' && systemctl --user enable --now podman.socket" 2>/dev/null || true
+  sudo -u "$user" -H bash -c "cd '$home_dir' && source '$env_file' && systemctl --user daemon-reload" >> /var/log/podmgr.log 2>&1 || true
+  sudo -u "$user" -H bash -c "cd '$home_dir' && source '$env_file' && systemctl --user enable --now '$service_name'" >> /var/log/podmgr.log 2>&1 || true
+  sudo -u "$user" -H bash -c "cd '$home_dir' && source '$env_file' && systemctl --user enable --now podman.socket" >> /var/log/podmgr.log 2>&1 || true
 
   echo "Created user $user"
 }
