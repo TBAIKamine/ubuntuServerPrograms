@@ -168,16 +168,16 @@ if [ "$ACTION" = "init" ]; then
   echo "Generating Personal Access Token for user: $GITEA_USERNAME"
 
   # podmgr exec only opens an interactive shell, so we need to run podman directly as the gitea user
-  PAT=$(timeout 30s sudo -u gitea -H bash -c "
+  PAT=$(timeout 30s sudo -u gitea -H bash -c '
     cd /opt/compose/gitea
     source /var/lib/gitea/.config/environment.d/podman.conf
-    CONTAINER_NAME=$(grep 'container_name:' compose.yaml 2>/dev/null || grep 'container_name:' docker-compose.yaml 2>/dev/null | head -1 | awk '{print $2}')
+    CONTAINER_NAME=$(grep "container_name:" compose.yaml 2>/dev/null || grep "container_name:" docker-compose.yaml 2>/dev/null | head -1 | awk "{print \$2}")
     podman exec "$CONTAINER_NAME" gitea admin user generate-access-token \
-      --username '$GITEA_USERNAME' \
-      --token-name 'automation-token' \
+      --username "'"$GITEA_USERNAME"'" \
+      --token-name "automation-token" \
       --scopes all \
       --raw
-  " 2>/dev/null || true)
+  ' 2>/dev/null || true)
 
   if [ -z "$PAT" ]; then
     # Save config for retry
