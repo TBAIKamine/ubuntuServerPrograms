@@ -169,38 +169,25 @@ if [ "$ACTION" = "init" ]; then
 
   # podmgr exec only opens an interactive shell, so we need to run podman directly as the gitea user
   PAT=$(sudo -u gitea -H bash -c '
-    echo "[DEBUG] Step 1: cd /opt/compose/gitea" >&2
-    cd /opt/compose/gitea || { echo "[DEBUG] FAIL: cd failed" >&2; exit 1; }
-    echo "[DEBUG] Step 2: sourcing podman.conf" >&2
+    cd /opt/compose/gitea || exit 1
     source /var/lib/gitea/.config/environment.d/podman.conf 2>/dev/null || true
-    echo "[DEBUG] Step 3: getting container name" >&2
     CONTAINER_NAME=$(grep "container_name:" compose.yaml 2>/dev/null | head -1 | awk "{print \$2}")
-    echo "[DEBUG] CONTAINER_NAME=[$CONTAINER_NAME]" >&2
     if [ -z "$CONTAINER_NAME" ]; then
-      echo "[DEBUG] FAIL: Could not find container name" >&2
       exit 1
     fi
-    echo "[DEBUG] Step 4: running podman exec with timeout 30s" >&2
-    RESULT=$(timeout 30s podman exec "$CONTAINER_NAME" gitea admin user generate-access-token \
+    timeout 30s podman exec "$CONTAINER_NAME" gitea admin user generate-access-token \
       --username "'"$GITEA_USERNAME"'" \
       --token-name "automation-token" \
       --scopes all \
-      --raw 2>&1)
-    EXIT_CODE=$?
-    echo "[DEBUG] Step 5: podman exec exit code=$EXIT_CODE" >&2
-    echo "[DEBUG] Step 6: gitea response:" >&2
-    echo "$RESULT" >&2
-    echo "[DEBUG] --- end response ---" >&2
-    # Output the full result for now (debugging)
-    echo "$RESULT"
-  ' 2>&1)
+      --raw 2>/dev/null
+  ')
 
-  # Show full PAT output for debugging
-  echo "[DEBUG] Full PAT output:"
-  echo "$PAT"
-  echo "[DEBUG] --- end PAT ---"
+  # Filter to get only the token (last non-empty line)
+  if [ -n "$PAT" ]; then
+    PAT=$(echo "$PAT" | grep -v "^$" | tail -1)
+  fi
 
-  if [ -z "$PAT" ] || [[ "$PAT" == *"Error"* ]] || [[ "$PAT" == *"error"* ]]; then
+  if [ -z "$PAT" ]; then
     # Save config for retry
     ENV_DIR="/home/${SUDO_USER:-$USER}/.config/gitea"
     mkdir -p "$ENV_DIR"
@@ -224,9 +211,6 @@ ENVEOF
   exit 0
 fi
 
-# ============================================================
-# --runner-token: Get runner registration token
-# ============================================================
 if [ "$ACTION" = "runner-token" ]; then
   # Check PAT exists
   if [ ! -f "$CONFIG_DIR/.pat" ] || [ ! -s "$CONFIG_DIR/.pat" ]; then
