@@ -34,6 +34,9 @@ ACTION=""
 SCOPE_TYPE=""
 SCOPE_VALUE=""
 FORCE=false
+DEPLOY=false
+DEPLOY_NAME=""
+DEPLOY_HOST="ubuntu-vm"
 
 while [ $# -gt 0 ]; do
   case "$1" in
@@ -63,6 +66,18 @@ while [ $# -gt 0 ]; do
       FORCE=true
       shift
       ;;
+    --deploy)
+      DEPLOY=true
+      shift
+      ;;
+    --name)
+      DEPLOY_NAME="$2"
+      shift 2
+      ;;
+    --host)
+      DEPLOY_HOST="$2"
+      shift 2
+      ;;
     -h|--help)
       cat <<EOF
 Usage:
@@ -72,6 +87,19 @@ Usage:
   $(basename "$0") --runner-token --repo <owner/repo>  # Get repo-level runner token (1 per repo)
   $(basename "$0") --list                              # List all registered runners
   $(basename "$0") --runner-token [--org|--repo] --force  # Force new token (use with caution!)
+
+Deploy to VM (secure - token piped via stdin over SSH):
+  $(basename "$0") --runner-token --deploy                                    # Instance runner
+  $(basename "$0") --runner-token --org <name> --deploy                       # Org runner
+  $(basename "$0") --runner-token --repo <owner/repo> --deploy                # Repo runner
+  $(basename "$0") --runner-token --repo <owner/repo> --deploy --name myname  # Custom runner name
+  $(basename "$0") --runner-token --repo <owner/repo> --deploy --host myvm    # Custom VM host
+
+Options:
+  --deploy        Deploy runner to VM after obtaining token (secure stdin pipe)
+  --name <name>   Runner name for deployment (default: derived from scope)
+  --host <host>   SSH host alias or address (default: ubuntu-vm)
+  --force         Force new token even if already registered (use with caution!)
 
 Note: Each runner token can only be obtained ONCE per scope. 
       The registry at $REGISTRY_FILE tracks created runners.
@@ -278,6 +306,48 @@ if [ "$ACTION" = "runner-token" ]; then
   register_runner "$REGISTRY_KEY"
   echo "Runner '$REGISTRY_KEY' registered." >&2
 
-  # Output token to stdout (for capture by caller)
-  echo "$TOKEN"
+  # ============================================================
+  # --deploy: Securely deploy runner to VM via stdin pipe
+  # ============================================================
+  if [ "$DEPLOY" = true ]; then
+    # Determine runner type for runnermgr.sh
+    if [ -z "$SCOPE_TYPE" ]; then
+      RUNNER_TYPE="instance"
+    else
+      RUNNER_TYPE="$SCOPE_TYPE"
+    fi
+
+    # Derive runner name if not specified
+    if [ -z "$DEPLOY_NAME" ]; then
+      case "$RUNNER_TYPE" in
+        instance)
+          DEPLOY_NAME="instance"
+          ;;
+        org)
+          DEPLOY_NAME="$SCOPE_VALUE"
+          ;;
+        repo)
+          # Extract repo name from owner/repo format
+          DEPLOY_NAME="${SCOPE_VALUE##*/}"
+          ;;
+      esac
+    fi
+
+    echo "Deploying runner '$DEPLOY_NAME' (type: $RUNNER_TYPE) to $DEPLOY_HOST..." >&2
+
+    # Securely pipe token via stdin to avoid exposure in ps/env/history
+    # The token is passed through SSH encrypted tunnel directly to runnermgr.sh
+    echo "$TOKEN" | ssh "$DEPLOY_HOST" \
+      "read -r RUNNER_TOKEN && ~/runnermgr.sh --type $RUNNER_TYPE --token \"\$RUNNER_TOKEN\" --name $DEPLOY_NAME"
+
+    if [ $? -eq 0 ]; then
+      echo "Runner '$DEPLOY_NAME' deployed successfully to $DEPLOY_HOST" >&2
+    else
+      echo "Error: Failed to deploy runner to $DEPLOY_HOST" >&2
+      exit 1
+    fi
+  else
+    # Output token to stdout (for capture by caller)
+    echo "$TOKEN"
+  fi
 fi
