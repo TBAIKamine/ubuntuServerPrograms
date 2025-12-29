@@ -9,6 +9,42 @@ else
   DMS_OWNER="$SUDO_USER"
 fi
 
+# Check if Let's Encrypt certificates exist for the FQDN, if not create them via a2sitemgr
+if [[ -n "${DMS_FQDN:-}" ]]; then
+  LE_ARCHIVE_DIR="/etc/letsencrypt/archive/${DMS_FQDN}"
+  LE_LIVE_DIR="/etc/letsencrypt/live/${DMS_FQDN}"
+  
+  if [[ ! -d "$LE_ARCHIVE_DIR" ]] || [[ ! -d "$LE_LIVE_DIR" ]]; then
+    echo "Let's Encrypt certificates not found for ${DMS_FQDN}. Attempting to create via a2sitemgr..."
+    
+    # Check if a2sitemgr exists
+    if ! command -v a2sitemgr &>/dev/null; then
+      echo "Error: a2sitemgr command not found. Cannot create SSL certificates for ${DMS_FQDN}."
+      echo "Please install a2cmds or manually obtain Let's Encrypt certificates before running this installer."
+      exit 1
+    fi
+    
+    # Use a2sitemgr to create domain config (this will handle SSL cert via certbot)
+    echo "Running: a2sitemgr ${DMS_FQDN} --mode domain --non-interactive"
+    if ! a2sitemgr "${DMS_FQDN}" --mode domain --non-interactive; then
+      echo "Error: a2sitemgr failed to configure domain ${DMS_FQDN}."
+      echo "Please check the output above and resolve any issues before retrying."
+      exit 1
+    fi
+    
+    # Verify certificates were created
+    if [[ ! -d "$LE_ARCHIVE_DIR" ]] || [[ ! -d "$LE_LIVE_DIR" ]]; then
+      echo "Error: Let's Encrypt certificates still not found after running a2sitemgr."
+      echo "Please manually obtain certificates for ${DMS_FQDN} and retry."
+      exit 1
+    fi
+    
+    echo "SSL certificates successfully created for ${DMS_FQDN}."
+  else
+    echo "Let's Encrypt certificates found for ${DMS_FQDN}."
+  fi
+fi
+
 DMS_GITHUB_URL="https://raw.githubusercontent.com/docker-mailserver/docker-mailserver/master"
 wget "${DMS_GITHUB_URL}/compose.yaml" -O $DMS_DIR/compose.yaml
 wget "${DMS_GITHUB_URL}/mailserver.env" -O $DMS_DIR/mailserver.env
