@@ -29,7 +29,10 @@ apt install -y \
   libsystemd-dev \
   make \
   pkg-config \
-  uidmap
+  uidmap \
+  netavark \
+  aardvark-dns \
+  passt
 
 # 2. Install latest Go (Standard practice for Podman 5+)
 # Ubuntu 24.04 repos may have an older Go version.
@@ -55,33 +58,34 @@ git checkout $LATEST_TAG
 # Build and Install
 make BUILDTAGS="selinux seccomp"
 make install PREFIX=/usr
-cd ..
 
-# 5. Install netavark (network stack for Podman)
-apt install -y protobuf-compiler librust-protobuf-dev cargo || true
-git clone https://github.com/containers/netavark
-cd netavark
-LATEST_TAG=$(git describe --tags `git rev-list --tags --max-count=1`)
-git checkout $LATEST_TAG
-make
-make install PREFIX=/usr
-cd ..
-
-# 6. Install aardvark-dns (DNS plugin for netavark)
-git clone https://github.com/containers/aardvark-dns
-cd aardvark-dns
-LATEST_TAG=$(git describe --tags `git rev-list --tags --max-count=1`)
-git checkout $LATEST_TAG
-make
-make install PREFIX=/usr
-cd ..
-
-# 7. Add Default Configuration Files
+# 5. Add Default Configuration Files
 mkdir -p /etc/containers
-curl -L -o /etc/containers/registries.conf https://raw.githubusercontent.com/containers/image/main/registries.conf
-curl -L -o /etc/containers/policy.json https://raw.githubusercontent.com/containers/image/main/default-policy.json
+curl -fsSL -o /etc/containers/registries.conf https://raw.githubusercontent.com/containers/image/main/registries.conf
+curl -fsSL -o /etc/containers/policy.json https://raw.githubusercontent.com/containers/image/main/default-policy.json
 
-# 8. Configure runtime paths explicitly
+# Verify config files exist
+if [ ! -f /etc/containers/policy.json ]; then
+    echo "Failed to download policy.json, creating default..."
+    cat > /etc/containers/policy.json <<'EOF'
+{
+    "default": [
+        {
+            "type": "insecureAcceptAnything"
+        }
+    ]
+}
+EOF
+fi
+
+if [ ! -f /etc/containers/registries.conf ]; then
+    echo "Failed to download registries.conf, creating default..."
+    cat > /etc/containers/registries.conf <<'EOF'
+unqualified-search-registries = ["docker.io"]
+EOF
+fi
+
+# 6. Configure runtime paths explicitly
 mkdir -p /usr/share/containers
 cat > /etc/containers/containers.conf <<'CONF'
 [engine]
@@ -90,15 +94,6 @@ conmon_path = [
   "/usr/local/bin/conmon",
   "/usr/bin/conmon"
 ]
-helper_binaries_dir = [
-  "/usr/local/libexec/podman",
-  "/usr/libexec/podman",
-  "/usr/local/lib/podman",
-  "/usr/lib/podman"
-]
-
-[network]
-network_backend = "netavark"
 
 [engine.runtimes]
 crun = [
@@ -113,9 +108,9 @@ echo "Runtime (crun) version:"
 crun --version
 echo "Conmon version:"
 conmon --version
-echo "Netavark version:"
-netavark --version || echo "netavark not in PATH but should be in libexec"
-echo "Aardvark-dns version:"
-aardvark-dns --version || echo "aardvark-dns not in PATH but should be in libexec"
+echo "Network stack:"
+netavark --version
+aardvark-dns --version
+pasta --version
 
 # Cleanup happens automatically via trap
