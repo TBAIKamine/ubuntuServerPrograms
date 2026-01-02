@@ -51,14 +51,14 @@ if dpkg -s apache2 &>/dev/null; then
 fi
 
 if [ -f "/opt/compose/docker-mailserver/compose.yaml" ]; then
-    ensure_iptables_rule filter INPUT -p tcp --dport 25 -j ACCEPT
-    ensure_iptables_rule filter INPUT -p tcp --dport 587 -j ACCEPT
-    ensure_iptables_rule filter INPUT -p tcp --dport 993 -j ACCEPT
-    ensure_iptables_rule filter INPUT -p tcp --dport 995 -j ACCEPT
     ensure_iptables_rule nat PREROUTING -p tcp --dport 25 -j REDIRECT --to-port 1025
     ensure_iptables_rule nat PREROUTING -p tcp --dport 587 -j REDIRECT --to-port 1587
     ensure_iptables_rule nat PREROUTING -p tcp --dport 993 -j REDIRECT --to-port 1993
     ensure_iptables_rule nat PREROUTING -p tcp --dport 995 -j REDIRECT --to-port 1995
+    ensure_iptables_rule filter INPUT -p tcp --dport 1025 -j ACCEPT
+    ensure_iptables_rule filter INPUT -p tcp --dport 1587 -j ACCEPT
+    ensure_iptables_rule filter INPUT -p tcp --dport 1993 -j ACCEPT
+    ensure_iptables_rule filter INPUT -p tcp --dport 1995 -j ACCEPT
 fi
 netfilter-persistent save
 
