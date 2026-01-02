@@ -27,6 +27,10 @@ if [ -f "$ENV_FILE" ]; then
   source "$ENV_FILE"
 fi
 
+# Sanitize GITEA_URL: strip https:// prefix if present (we add it when constructing API URLs)
+GITEA_URL="${GITEA_URL#https://}"
+GITEA_URL="${GITEA_URL#http://}"
+
 REGISTRY_FILE="$CONFIG_DIR/.runners_registry"
 
 # Parse arguments
@@ -275,12 +279,28 @@ if [ "$ACTION" = "runner-token" ]; then
     echo "Fetching runner registration token for repo: $SCOPE_VALUE" >&2
   fi
 
-  RUNNER_TOKEN_RESPONSE=$(curl -s -X GET "$API_URL" \
+  echo "DEBUG: API URL: $API_URL" >&2
+
+  # Use -w to get HTTP status code, -S to show errors
+  HTTP_RESPONSE=$(curl -s -S -w "\n%{http_code}" -X GET "$API_URL" \
        -H "Authorization: token $PAT" \
-       -H "accept: application/json")
+       -H "accept: application/json" 2>&1)
+  
+  HTTP_CODE=$(echo "$HTTP_RESPONSE" | tail -1)
+  RUNNER_TOKEN_RESPONSE=$(echo "$HTTP_RESPONSE" | sed '$d')
+
+  echo "DEBUG: HTTP Status: $HTTP_CODE" >&2
+  echo "DEBUG: Response: $RUNNER_TOKEN_RESPONSE" >&2
 
   if [ -z "$RUNNER_TOKEN_RESPONSE" ]; then
-    echo "Error: Failed to fetch runner registration token." >&2
+    echo "Error: Failed to fetch runner registration token. Empty response." >&2
+    exit 1
+  fi
+
+  # Check HTTP status code
+  if [ "$HTTP_CODE" != "200" ] && [ "$HTTP_CODE" != "201" ]; then
+    echo "Error: HTTP $HTTP_CODE from Gitea API" >&2
+    echo "Response: $RUNNER_TOKEN_RESPONSE" >&2
     exit 1
   fi
 
@@ -337,7 +357,8 @@ if [ "$ACTION" = "runner-token" ]; then
 
     # Securely pipe token via stdin to avoid exposure in ps/env/history
     # The token is passed through SSH encrypted tunnel directly to runnermgr.sh
-    echo "$TOKEN" | ssh "$DEPLOY_HOST" \
+    # Use sudo -u to run as original user (to use their SSH config/keys)
+    echo "$TOKEN" | sudo -u "${SUDO_USER:-$USER}" ssh "$DEPLOY_HOST" \
       "read -r RUNNER_TOKEN && ~/runnermgr.sh --type $RUNNER_TYPE --token \"\$RUNNER_TOKEN\" --name $DEPLOY_NAME"
 
     if [ $? -eq 0 ]; then
