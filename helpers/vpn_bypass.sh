@@ -36,6 +36,10 @@ ensure_iptables_rule() {
     iptables -t "$table" -A "$chain" "$@"
 }
 
+# Set default policies to DROP for security
+iptables -P INPUT DROP
+iptables -P FORWARD DROP
+
 ensure_iptables_rule filter INPUT -m conntrack --ctstate ESTABLISHED,RELATED -j ACCEPT
 ensure_iptables_rule filter INPUT -i lo -j ACCEPT
 ensure_iptables_rule filter INPUT -p tcp --dport 22 -j ACCEPT
